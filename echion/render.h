@@ -186,10 +186,19 @@ public:
 
     void open() override
     {
-        output.open(std::getenv("ECHION_OUTPUT"));
+        std::lock_guard<std::mutex> guard(lock);
+        
+        const char* output_path = std::getenv("ECHION_OUTPUT");
+        if (!output_path)
+        {
+            std::cerr << "ECHION_OUTPUT environment variable not set" << std::endl;
+            throw std::runtime_error("ECHION_OUTPUT environment variable not set");
+        }
+        
+        output.open(output_path);
         if (!output.is_open())
         {
-            std::cerr << "Failed to open output file " << std::getenv("ECHION_OUTPUT") << std::endl;
+            std::cerr << "Failed to open output file " << output_path << std::endl;
             throw std::runtime_error("Failed to open output file");
         }
     }

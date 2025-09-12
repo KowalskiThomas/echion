@@ -167,6 +167,8 @@ static inline void _start()
 // ----------------------------------------------------------------------------
 static inline void _stop()
 {
+    Renderer::get().close();
+
     if (memory)
         teardown_memory();
 
@@ -187,7 +189,6 @@ static inline void _stop()
 
     restore_signals();
 
-    Renderer::get().close();
 
     reset_frame_cache();
 }
