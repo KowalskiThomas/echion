@@ -208,6 +208,7 @@ public:
     {
         std::lock_guard<std::mutex> guard(lock);
 
+        std::cerr << "Flushing output" << std::endl;
         output.flush();
         output.close();
     }

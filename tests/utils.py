@@ -32,9 +32,12 @@ class DataSummary:
         for sample in data.samples:
             self.nsamples += 1
             frames = sample.frames
-            v = sample.metrics[0].value
 
-            if not sample.thread or not v:
+            if not sample.thread or not sample.metrics:
+                continue
+            
+            v = sample.metrics[0].value
+            if not v:
                 continue
 
             self.total_metric += v
@@ -103,6 +106,8 @@ def run_echion(*args: str) -> CompletedProcess:
     try:
         return run(
             [
+                "/Users/thomas.kowalski/Documents/echion/env/bin/python3",
+                "-m",
                 "echion",
                 *args,
             ],

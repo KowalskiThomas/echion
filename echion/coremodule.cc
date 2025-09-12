@@ -234,6 +234,7 @@ static inline void _sampler()
             static_cast<time_t>((end_time - now) / 1000000),
             static_cast<long>(((end_time - now) % 1000000)*1000)
         };
+        std::cerr << "Sleeping for " << time_left_spec.tv_sec << " seconds and " << time_left_spec.tv_nsec << " nanoseconds" << std::endl;
         nanosleep(&time_left_spec, nullptr);
 #endif
         last_time = now;
@@ -243,8 +244,11 @@ static inline void _sampler()
 static void sampler()
 {
     _start();
+    std::cerr << "Sampler started" << std::endl;
     _sampler();
+    std::cerr << "Sampler returned" << std::endl;
     _stop();
+    std::cerr << "Sampler stopped" << std::endl;
 }
 
 // ----------------------------------------------------------------------------
