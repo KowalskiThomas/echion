@@ -19,6 +19,7 @@
 #include <fcntl.h>
 #include <sched.h>
 #include <signal.h>
+#include <time.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -166,6 +167,8 @@ static inline void _start()
 // ----------------------------------------------------------------------------
 static inline void _stop()
 {
+    Renderer::get().close();
+
     if (memory)
         teardown_memory();
 
@@ -186,7 +189,6 @@ static inline void _stop()
 
     restore_signals();
 
-    Renderer::get().close();
 
     reset_frame_cache();
 }
@@ -221,9 +223,20 @@ static inline void _sampler()
             });
         }
 
-        while (gettime() < end_time && running)
-            sched_yield();
-
+#if defined PL_LINUX
+        timespec end_time_spec{
+            static_cast<time_t>(end_time / 1000000),
+            static_cast<long>((end_time % 1000000)*1000)
+        };
+        clock_nanosleep(CLOCK_BOOTTIME, TIMER_ABSTIME, &end_time_spec, nullptr);
+#elif defined PL_DARWIN
+        timespec time_left_spec{
+            static_cast<time_t>((end_time - now) / 1000000),
+            static_cast<long>(((end_time - now) % 1000000)*1000)
+        };
+        std::cerr << "Sleeping for " << time_left_spec.tv_sec << " seconds and " << time_left_spec.tv_nsec << " nanoseconds" << std::endl;
+        nanosleep(&time_left_spec, nullptr);
+#endif
         last_time = now;
     }
 }
@@ -231,8 +244,11 @@ static inline void _sampler()
 static void sampler()
 {
     _start();
+    std::cerr << "Sampler started" << std::endl;
     _sampler();
+    std::cerr << "Sampler returned" << std::endl;
     _stop();
+    std::cerr << "Sampler stopped" << std::endl;
 }
 
 // ----------------------------------------------------------------------------

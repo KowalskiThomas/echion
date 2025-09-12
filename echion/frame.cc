@@ -6,13 +6,12 @@
 #if PY_VERSION_HEX >= 0x030b0000
 static inline int _read_varint(unsigned char* table, ssize_t size, ssize_t* i)
 {
-    ssize_t guard = size - 1;
-    if (*i >= guard)
+    if (*i >= size - 1)
         return 0;
 
     int val = table[++*i] & 63;
     int shift = 0;
-    while (table[*i] & 64 && *i < guard)
+    while (table[*i] & 64 && *i < size - 1)
     {
         shift += 6;
         val |= (table[++*i] & 63) << shift;
