@@ -146,7 +146,7 @@ void ThreadInfo::unwind(PyThreadState* tstate)
     {
         // Lock on the signal handler. Will get unlocked once the handler is
         // done unwinding the native stack.
-        const std::lock_guard<std::mutex> guard(sigprof_handler_lock);
+        sigprof_handler_lock.lock();
 
         // Pass the current thread state to the signal handler. This is needed
         // to unwind the Python stack from within it.
@@ -159,6 +159,7 @@ void ThreadInfo::unwind(PyThreadState* tstate)
         // stack. Release the lock immediately after so that it is available
         // for the next thread.
         sigprof_handler_lock.lock();
+        sigprof_handler_lock.unlock();
     }
     else
     {
