@@ -3,6 +3,7 @@
 # Copyright (c) 2023 Gabriele N. Tornetta <phoenix1987@gmail.com>.
 
 import argparse
+import errno
 import os
 import sys
 import tempfile
@@ -188,7 +189,39 @@ def main() -> None:
         parser.print_usage()
         sys.exit(1)
 
-    # TODO: Validate arguments
+    # Validate arguments
+    if args.interval <= 0:
+        print("echion: interval must be positive")
+        sys.exit(1)
+    
+    if args.exposure is not None and args.exposure <= 0:
+        print("echion: exposure time must be positive")
+        sys.exit(1)
+    
+    if args.max_file_descriptors is not None and args.max_file_descriptors <= 0:
+        print("echion: max-file-descriptors must be positive")
+        sys.exit(1)
+    
+    if args.pid and args.where:
+        print("echion: cannot specify both --pid and --where")
+        sys.exit(1)
+    
+    if args.pid and args.pid <= 0:
+        print("echion: PID must be positive")
+        sys.exit(1)
+    
+    if args.where and args.where <= 0:
+        print("echion: where PID must be positive")
+        sys.exit(1)
+    
+    # Validate output path format
+    if "%%(pid)" not in args.output:
+        print("echion: warning: output path should contain %(pid) placeholder")
+    
+    # Mutually exclusive options
+    if args.cpu and args.memory:
+        print("echion: cannot use both --cpu and --memory modes")
+        sys.exit(1)
 
     env = os.environ.copy()
 
@@ -226,12 +259,24 @@ def main() -> None:
     )
 
     try:
-        os.execvpe(executable, args.command, env)  # TODO: Cross-platform?
-    except OSError:
-        print(
-            "echion: executable '%s' does not have executable permissions.\n"
-            % executable
-        )
+        # Use execvpe on Unix-like systems, subprocess on Windows for better compatibility
+        if hasattr(os, 'execvpe'):
+            os.execvpe(executable, args.command, env)
+        else:
+            # Fallback for Windows and other systems without execvpe
+            import subprocess
+            result = subprocess.run(args.command, env=env)
+            sys.exit(result.returncode)
+    except OSError as e:
+        if e.errno == errno.EACCES:
+            print(
+                "echion: executable '%s' does not have executable permissions.\n"
+                % executable
+            )
+        elif e.errno == errno.ENOENT:
+            print("echion: executable '%s' not found.\n" % executable)
+        else:
+            print("echion: failed to execute '%s': %s\n" % (executable, e))
         parser.print_usage()
         sys.exit(1)
 

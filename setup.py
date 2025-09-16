@@ -32,13 +32,15 @@ else:
 if DISABLE_NATIVE:
     CFLAGS += ["-DUNWIND_NATIVE_DISABLE"]
 
+SANITIZE = True
+
 echionmodule = Extension(
     "echion.core",
     sources=["echion/coremodule.cc", "echion/frame.cc", "echion/render.cc"],
     include_dirs=["."],
     define_macros=[(f"PL_{PLATFORM.upper()}", None)],
-    extra_compile_args=["-std=c++17", "-Wall", "-Wextra"] + CFLAGS + COLORS,
-    extra_link_args=LDADD.get(PLATFORM, []),
+    extra_compile_args=["-std=c++17", "-Wall", "-Wextra"] + CFLAGS + COLORS + (["-fsanitize=address"] if SANITIZE else []),
+    extra_link_args=LDADD.get(PLATFORM, []) + (["-fsanitize=address"] if SANITIZE else []),
 )
 
 setup(
