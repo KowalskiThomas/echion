@@ -19,6 +19,13 @@
 // Forward declaration
 class Frame;
 
+static inline void my_assert(bool x) {
+    if (!(x)) {
+        std::cerr << "Assertion failed, renderer is CLOSED" << std::endl;
+        throw std::runtime_error("Assertion failed");
+    }
+}
+
 enum MetricType
 {
     Time,
@@ -346,6 +353,7 @@ class Renderer
 private:
     std::shared_ptr<RendererInterface> default_renderer = std::make_shared<MojoRenderer>();
     std::weak_ptr<RendererInterface> currentRenderer;
+    bool is_open = false;
 
     std::shared_ptr<RendererInterface> getActiveRenderer()
     {
@@ -395,72 +403,92 @@ public:
     void frame(mojo_ref_t key, mojo_ref_t filename, mojo_ref_t name, mojo_int_t line,
                mojo_int_t line_end, mojo_int_t column, mojo_int_t column_end)
     {
+        my_assert(is_open);
         getActiveRenderer()->frame(key, filename, name, line, line_end, column, column_end);
     }
 
     void frame_ref(mojo_ref_t key)
     {
+        my_assert(is_open);
         getActiveRenderer()->frame_ref(key);
     }
 
     void frame_kernel(const std::string& scope)
     {
+        my_assert(is_open);
         getActiveRenderer()->frame_kernel(scope);
     }
 
     void string(mojo_ref_t key, const char* value)
     {
+        my_assert(is_open);
         getActiveRenderer()->string(key, value);
     }
 
     void string_ref(mojo_ref_t key)
     {
+        my_assert(is_open);
         getActiveRenderer()->string_ref(key);
     }
 
     void render_message(std::string_view msg)
     {
+        my_assert(is_open);
         getActiveRenderer()->render_message(msg);
     }
 
     void open()
     {
+        my_assert(!is_open);
+        is_open = true;
         getActiveRenderer()->open();
     }
 
     void close()
     {
+        // std::cerr << "  Closing renderer..." << std::endl;
+        my_assert(is_open);
+        is_open = false;
         getActiveRenderer()->close();
+        // std::cerr << "  Renderer closed" << std::endl;
     }
 
     void render_thread_begin(PyThreadState* tstate, std::string_view name, microsecond_t cpu_time,
                              uintptr_t thread_id, unsigned long native_id)
     {
+        // std::cerr << "  Rendering thread begin..." << std::endl;
+        my_assert(is_open);
         getActiveRenderer()->render_thread_begin(tstate, name, cpu_time, thread_id, native_id);
     }
 
     void render_task_begin(std::string task_name, bool on_cpu)
     {
+        my_assert(is_open);
         getActiveRenderer()->render_task_begin(task_name, on_cpu);
     }
 
     void render_stack_begin(long long pid, long long iid, const std::string& thread_name)
     {
+        my_assert(is_open);
         getActiveRenderer()->render_stack_begin(pid, iid, thread_name);
     }
 
     void render_frame(Frame& frame)
     {
+        my_assert(is_open);
         getActiveRenderer()->render_frame(frame);
     }
 
     void render_cpu_time(uint64_t cpu_time)
     {
+        // std::cerr << "  Rendering cpu time..." << std::endl;
+        my_assert(is_open);
         getActiveRenderer()->render_cpu_time(cpu_time);
     }
 
     void render_stack_end(MetricType metric_type, uint64_t delta)
     {
+        my_assert(is_open);
         getActiveRenderer()->render_stack_end(metric_type, delta);
     }
 };

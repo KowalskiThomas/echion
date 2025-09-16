@@ -19,6 +19,7 @@
 #include <fcntl.h>
 #include <sched.h>
 #include <signal.h>
+#include <time.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -166,6 +167,7 @@ static inline void _start()
 // ----------------------------------------------------------------------------
 static inline void _stop()
 {
+    // std::cerr << "Stopping echion now..." << std::endl;
     if (memory)
         teardown_memory();
 
@@ -186,7 +188,9 @@ static inline void _stop()
 
     restore_signals();
 
+    // std::cerr << "Closing renderer..." << std::endl;
     Renderer::get().close();
+    // std::cerr << "Renderer closed" << std::endl;
 
     reset_frame_cache();
 }
@@ -214,16 +218,16 @@ static inline void _sampler()
         {
             microsecond_t wall_time = now - last_time;
 
+            // std::cerr << "Sampling..." << std::endl;
             for_each_interp([=](InterpreterInfo& interp) -> void {
                 for_each_thread(interp, [=](PyThreadState* tstate, ThreadInfo& thread) {
                     thread.sample(interp.id, tstate, wall_time);
                 });
             });
+            // std::cerr << "Sampled" << std::endl;
         }
 
-        while (gettime() < end_time && running)
-            sched_yield();
-
+        std::this_thread::sleep_for(std::chrono::microseconds(end_time - now));
         last_time = now;
     }
 }
@@ -285,6 +289,7 @@ static PyObject* stop(PyObject* Py_UNUSED(m), PyObject* Py_UNUSED(args))
     if (sampler_thread != nullptr)
     {
         sampler_thread->join();
+        delete sampler_thread;
         sampler_thread = nullptr;
     }
 
