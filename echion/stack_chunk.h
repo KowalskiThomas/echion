@@ -59,12 +59,15 @@ void StackChunk::update(_PyStackChunk* chunk_addr)
     if (chunk.size > data_capacity)
     {
         data_capacity = chunk.size;
-        char* new_data = (char*)realloc(data.get(), data_capacity);
+        char* old_data = data.get();
+        char* new_data = (char*)realloc(old_data, data_capacity);
         if (!new_data)
         {
+            // realloc failed, original data is still valid
             throw StackChunkError();
         }
-        data.release();  // Release the old pointer before resetting
+        // Only release after successful realloc
+        data.release();
         data.reset(new_data);
     }
 
