@@ -59,7 +59,10 @@ void StackChunk::update(_PyStackChunk* chunk_addr)
     if (chunk.size > data_capacity)
     {
         data_capacity = chunk.size;
-        char* new_data = (char*)realloc(data.get(), data_capacity);
+
+        // keep a reference to the old data in case realloc fails
+        char* old_data = data.get();
+        char* new_data = (char*)realloc(old_data, data_capacity);
         if (!new_data)
         {
             throw StackChunkError();
