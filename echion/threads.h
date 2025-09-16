@@ -469,6 +469,8 @@ void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
 
         current_greenlets.clear();
     }
+    
+    // std::cerr << "  Rendering thread end..." << std::endl;
 }
 
 // ----------------------------------------------------------------------------
