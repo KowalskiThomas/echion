@@ -4,9 +4,12 @@
 // ------------------------------------------------------------------------
 void WhereRenderer::render_frame(Frame& frame)
 {
-    auto name_str = string_table.lookup(frame.name);
-    auto filename_str = string_table.lookup(frame.filename);
+    auto name_result = string_table.lookup(frame.name);
+    auto filename_result = string_table.lookup(frame.filename);
     auto line = frame.location.line;
+
+    std::string name_str = name_result ? **name_result : "<unknown>";
+    std::string filename_str = filename_result ? **filename_result : "<unknown>";
 
     if (filename_str.rfind("native@", 0) == 0)
     {

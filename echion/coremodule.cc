@@ -387,16 +387,14 @@ static PyObject* track_greenlet(PyObject* Py_UNUSED(m), PyObject* args)
 
     StringTable::Key greenlet_name;
 
-    try
-    {
-        greenlet_name = string_table.key(name);
-    }
-    catch (StringTable::Error&)
+    auto name_result = string_table.key(name);
+    if (!name_result)
     {
         // We failed to get this task but we keep going
         PyErr_SetString(PyExc_RuntimeError, "Failed to get greenlet name from the string table");
         return NULL;
     }
+    greenlet_name = *name_result;
     {
         const std::lock_guard<std::mutex> guard(greenlet_info_map_lock);
 

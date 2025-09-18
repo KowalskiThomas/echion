@@ -49,19 +49,10 @@ typedef struct _dictkeysobject
 typedef PyObject* PyDictValues;
 #endif
 
-#include <exception>
 #include <unordered_set>
 
+#include <echion/errors.h>
 #include <echion/vm.h>
-
-class MirrorError : public std::exception
-{
-public:
-    const char* what() const noexcept override
-    {
-        return "Cannot create mirror object";
-    }
-};
 
 class MirrorObject
 {

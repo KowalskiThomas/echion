@@ -77,43 +77,53 @@ Frame::Frame(PyObject* frame)
 }
 
 // ------------------------------------------------------------------------
-Frame::Frame(PyCodeObject* code, int lasti)
+Result<Frame> Frame::create(PyCodeObject* code, int lasti)
 {
-    try
-    {
-        filename = string_table.key(code->co_filename);
-#if PY_VERSION_HEX >= 0x030b0000
-        name = string_table.key(code->co_qualname);
-#else
-        name = string_table.key(code->co_name);
-#endif
-    }
-    catch (StringTable::Error&)
-    {
-        throw Error();
-    }
+    Frame frame(StringTable::INVALID);
+    
+    auto filename_result = string_table.key(code->co_filename);
+    if (!filename_result)
+        return Result<Frame>::error();
+    frame.filename = *filename_result;
 
-    infer_location(code, lasti);
+#if PY_VERSION_HEX >= 0x030b0000
+    auto name_result = string_table.key(code->co_qualname);
+#else
+    auto name_result = string_table.key(code->co_name);
+#endif
+    if (!name_result)
+        return Result<Frame>::error();
+    frame.name = *name_result;
+
+    auto location_result = frame.infer_location(code, lasti);
+    if (!location_result)
+        return Result<Frame>::error();
+
+    return Result<Frame>(frame);
 }
 
 // ------------------------------------------------------------------------
 #ifndef UNWIND_NATIVE_DISABLE
-Frame::Frame(unw_cursor_t& cursor, unw_word_t pc)
+Result<Frame> Frame::create(unw_cursor_t& cursor, unw_word_t pc)
 {
-    try
-    {
-        filename = string_table.key(pc);
-        name = string_table.key(cursor);
-    }
-    catch (StringTable::Error&)
-    {
-        throw Error();
-    }
+    Frame frame(StringTable::INVALID);
+    
+    auto filename_result = string_table.key(pc);
+    if (!filename_result)
+        return Result<Frame>::error();
+    frame.filename = *filename_result;
+
+    auto name_result = string_table.key(cursor);
+    if (!name_result)
+        return Result<Frame>::error();
+    frame.name = *name_result;
+    
+    return Result<Frame>(frame);
 }
 #endif  // UNWIND_NATIVE_DISABLE
 
 // ----------------------------------------------------------------------------
-void Frame::infer_location(PyCodeObject* code_obj, int lasti)
+Result<void> Frame::infer_location(PyCodeObject* code_obj, int lasti)
 {
     unsigned int lineno = code_obj->co_firstlineno;
     Py_ssize_t len = 0;
@@ -121,7 +131,7 @@ void Frame::infer_location(PyCodeObject* code_obj, int lasti)
 #if PY_VERSION_HEX >= 0x030b0000
     auto table = pybytes_to_bytes_and_size(code_obj->co_linetable, &len);
     if (table == nullptr)
-        throw LocationError();
+        return Result<void>::error();
 
     auto table_data = table.get();
 
@@ -158,7 +168,7 @@ void Frame::infer_location(PyCodeObject* code_obj, int lasti)
             case 11:
             case 10:
                 if (i >= len - 2)
-                    throw LocationError();
+                    return Result<void>::error();
 
                 lineno += code - 10;
 
@@ -171,7 +181,7 @@ void Frame::infer_location(PyCodeObject* code_obj, int lasti)
 
             default:
                 if (i >= len - 1)
-                    throw LocationError();
+                    return Result<void>::error();
 
                 next_byte = table[++i];
 
@@ -188,7 +198,7 @@ void Frame::infer_location(PyCodeObject* code_obj, int lasti)
 #elif PY_VERSION_HEX >= 0x030a0000
     auto table = pybytes_to_bytes_and_size(code_obj->co_linetable, &len);
     if (table == nullptr)
-        throw LocationError();
+        return Result<void>::error();
 
     lasti <<= 1;
     for (int i = 0, bc = 0; i < len; i++)
@@ -213,7 +223,7 @@ void Frame::infer_location(PyCodeObject* code_obj, int lasti)
 #else
     auto table = pybytes_to_bytes_and_size(code_obj->co_lnotab, &len);
     if (table == nullptr)
-        throw LocationError();
+        return Result<void>::error();
 
     for (int i = 0, bc = 0; i < len; i++)
     {
@@ -233,6 +243,8 @@ void Frame::infer_location(PyCodeObject* code_obj, int lasti)
     this->location.line_end = lineno;
     this->location.column = 0;
     this->location.column_end = 0;
+    
+    return Result<void>::ok();
 }
 
 // ------------------------------------------------------------------------
@@ -262,9 +274,9 @@ Frame::Key Frame::key(PyObject* frame)
 
 // ------------------------------------------------------------------------
 #if PY_VERSION_HEX >= 0x030b0000
-Frame& Frame::read(_PyInterpreterFrame* frame_addr, _PyInterpreterFrame** prev_addr)
+Result<Frame*> Frame::read(_PyInterpreterFrame* frame_addr, _PyInterpreterFrame** prev_addr)
 #else
-Frame& Frame::read(PyObject* frame_addr, PyObject** prev_addr)
+Result<Frame*> Frame::read(PyObject* frame_addr, PyObject** prev_addr)
 #endif
 {
 #if PY_VERSION_HEX >= 0x030b0000
@@ -289,13 +301,13 @@ Frame& Frame::read(PyObject* frame_addr, PyObject** prev_addr)
         {
             if (copy_type(frame_addr, iframe))
             {
-                throw Frame::Error();
+                return Result<Frame*>::error();
             }
             frame_addr = &iframe;
         }
         if (copy_type(frame_addr->f_executable, f_executable))
         {
-            throw Frame::Error();
+            return Result<Frame*>::error();
         }
         if (f_executable.ob_type == &PyCode_Type)
         {
@@ -305,7 +317,7 @@ Frame& Frame::read(PyObject* frame_addr, PyObject** prev_addr)
 
     if (frame_addr == NULL)
     {
-        throw Frame::Error();
+        return Result<Frame*>::error();
     }
 #else   // PY_VERSION_HEX < 0x030d0000
     // Code Specific to Python < 3.13 and >= 3.11
@@ -320,7 +332,7 @@ Frame& Frame::read(PyObject* frame_addr, PyObject** prev_addr)
     {
         if (copy_type(frame_addr, iframe))
         {
-            throw Frame::Error();
+            return Result<Frame*>::error();
         }
         frame_addr = &iframe;
     }
@@ -334,23 +346,31 @@ Frame& Frame::read(PyObject* frame_addr, PyObject** prev_addr)
                            reinterpret_cast<_Py_CODEUNIT*>(
                                (reinterpret_cast<PyCodeObject*>(frame_addr->f_executable)))))) -
         offsetof(PyCodeObject, co_code_adaptive) / sizeof(_Py_CODEUNIT);
-    auto& frame = Frame::get(reinterpret_cast<PyCodeObject*>(frame_addr->f_executable), lasti);
+    auto frame_result = Frame::get(reinterpret_cast<PyCodeObject*>(frame_addr->f_executable), lasti);
+    if (!frame_result) {
+        return Result<Frame*>::error();
+    }
+    Frame* frame = *frame_result;
 #else
     const int lasti = (static_cast<int>((frame_addr->prev_instr -
                                          reinterpret_cast<_Py_CODEUNIT*>((frame_addr->f_code))))) -
                       offsetof(PyCodeObject, co_code_adaptive) / sizeof(_Py_CODEUNIT);
-    auto& frame = Frame::get(frame_addr->f_code, lasti);
+    auto frame_result = Frame::get(frame_addr->f_code, lasti);
+    if (!frame_result) {
+        return Result<Frame*>::error();
+    }
+    Frame* frame = *frame_result;
 #endif  // PY_VERSION_HEX >= 0x030d0000
-    if (&frame != &INVALID_FRAME)
+    if (frame != &INVALID_FRAME)
     {
 #if PY_VERSION_HEX >= 0x030c0000
-        frame.is_entry = (frame_addr->owner == FRAME_OWNED_BY_CSTACK);  // Shim frame
+        frame->is_entry = (frame_addr->owner == FRAME_OWNED_BY_CSTACK);  // Shim frame
 #else   // PY_VERSION_HEX < 0x030c0000
-        frame.is_entry = frame_addr->is_entry;
+        frame->is_entry = frame_addr->is_entry;
 #endif  // PY_VERSION_HEX >= 0x030c0000
     }
 
-    *prev_addr = &frame == &INVALID_FRAME ? NULL : frame_addr->previous;
+    *prev_addr = frame == &INVALID_FRAME ? NULL : frame_addr->previous;
 
 #else   // PY_VERSION_HEX < 0x030b0000
     // Unwind the stack from leaf to root and store it in a stack. This way we
@@ -358,123 +378,155 @@ Frame& Frame::read(PyObject* frame_addr, PyObject** prev_addr)
     PyFrameObject py_frame;
 
     if (copy_type(frame_addr, py_frame))
-        throw Error();
+        return Result<Frame*>::error();
 
-    auto& frame = Frame::get(py_frame.f_code, py_frame.f_lasti);
+    auto frame_result = Frame::get(py_frame.f_code, py_frame.f_lasti);
+    if (!frame_result) {
+        return Result<Frame*>::error();
+    }
+    Frame* frame = *frame_result;
 
-    *prev_addr = (&frame == &INVALID_FRAME) ? NULL : reinterpret_cast<PyObject*>(py_frame.f_back);
+    *prev_addr = (frame == &INVALID_FRAME) ? NULL : reinterpret_cast<PyObject*>(py_frame.f_back);
 #endif  // PY_VERSION_HEX >= 0x030b0000
 
-    return frame;
+    return Result<Frame*>(frame);
 }
 
 // ----------------------------------------------------------------------------
-Frame& Frame::get(PyCodeObject* code_addr, int lasti)
+Result<Frame*> Frame::get(PyCodeObject* code_addr, int lasti)
 {
     auto frame_key = Frame::key(code_addr, lasti);
 
-    try
+    auto lookup_result = frame_cache->lookup(frame_key);
+    if (lookup_result)
     {
-        return frame_cache->lookup(frame_key);
+        return lookup_result;
     }
-    catch (LRUCache<uintptr_t, Frame>::LookupError&)
+    else
     {
-        try
-        {
-            PyCodeObject code;
-            if (copy_type(code_addr, code))
-                return INVALID_FRAME;
+        PyCodeObject code;
+        if (copy_type(code_addr, code))
+            return Result<Frame*>(&INVALID_FRAME);
 
-            auto new_frame = std::make_unique<Frame>(&code, lasti);
+        auto frame_result = Frame::create(&code, lasti);
+        if (frame_result)
+        {
+            auto new_frame = std::make_unique<Frame>(*frame_result);
             new_frame->cache_key = frame_key;
-            auto& f = *new_frame;
+            Frame* frame_ptr = new_frame.get();
+            
             Renderer::get().frame(frame_key, new_frame->filename, new_frame->name,
                                   new_frame->location.line, new_frame->location.line_end,
                                   new_frame->location.column, new_frame->location.column_end);
-            frame_cache->store(frame_key, std::move(new_frame));
-            return f;
+            
+            auto store_result = frame_cache->store(frame_key, std::move(new_frame));
+            if (store_result)
+            {
+                return Result<Frame*>(frame_ptr);
+            }
         }
-        catch (Frame::Error&)
-        {
-            return INVALID_FRAME;
-        }
+        
+        return Result<Frame*>(&INVALID_FRAME);
     }
 }
 
 // ----------------------------------------------------------------------------
-Frame& Frame::get(PyObject* frame)
+Result<Frame*> Frame::get(PyObject* frame)
 {
     auto frame_key = Frame::key(frame);
 
-    try
+    auto lookup_result = frame_cache->lookup(frame_key);
+    if (lookup_result)
     {
-        return frame_cache->lookup(frame_key);
+        return lookup_result;
     }
-    catch (LRUCache<uintptr_t, Frame>::LookupError&)
+    else
     {
         auto new_frame = std::make_unique<Frame>(frame);
         new_frame->cache_key = frame_key;
-        auto& f = *new_frame;
+        Frame* frame_ptr = new_frame.get();
+        
         Renderer::get().frame(frame_key, new_frame->filename, new_frame->name,
                               new_frame->location.line, new_frame->location.line_end,
                               new_frame->location.column, new_frame->location.column_end);
-        frame_cache->store(frame_key, std::move(new_frame));
-        return f;
+        
+        auto store_result = frame_cache->store(frame_key, std::move(new_frame));
+        if (store_result)
+        {
+            return Result<Frame*>(frame_ptr);
+        }
+        
+        return Result<Frame*>::error();
     }
 }
 
 // ----------------------------------------------------------------------------
 #ifndef UNWIND_NATIVE_DISABLE
-Frame& Frame::get(unw_cursor_t& cursor)
+Result<Frame*> Frame::get(unw_cursor_t& cursor)
 {
     unw_word_t pc;
     unw_get_reg(&cursor, UNW_REG_IP, &pc);
     if (pc == 0)
-        throw Error();
+        return Result<Frame*>::error();
 
     uintptr_t frame_key = (uintptr_t)pc;
-    try
+    
+    auto lookup_result = frame_cache->lookup(frame_key);
+    if (lookup_result)
     {
-        return frame_cache->lookup(frame_key);
+        return lookup_result;
     }
-    catch (LRUCache<uintptr_t, Frame>::LookupError&)
+    else
     {
-        try
+        auto frame_result = Frame::create(cursor, pc);
+        if (frame_result)
         {
-            auto frame = std::make_unique<Frame>(cursor, pc);
+            auto frame = std::make_unique<Frame>(*frame_result);
             frame->cache_key = frame_key;
-            auto& f = *frame;
+            Frame* frame_ptr = frame.get();
+            
             Renderer::get().frame(frame_key, frame->filename, frame->name, frame->location.line,
                                   frame->location.line_end, frame->location.column,
                                   frame->location.column_end);
-            frame_cache->store(frame_key, std::move(frame));
-            return f;
+            
+            auto store_result = frame_cache->store(frame_key, std::move(frame));
+            if (store_result)
+            {
+                return Result<Frame*>(frame_ptr);
+            }
         }
-        catch (Frame::Error&)
-        {
-            return UNKNOWN_FRAME;
-        }
+        
+        return Result<Frame*>(&UNKNOWN_FRAME);
     }
 }
 #endif  // UNWIND_NATIVE_DISABLE
 
 // ----------------------------------------------------------------------------
-Frame& Frame::get(StringTable::Key name)
+Result<Frame*> Frame::get(StringTable::Key name)
 {
     uintptr_t frame_key = static_cast<uintptr_t>(name);
-    try
+    
+    auto lookup_result = frame_cache->lookup(frame_key);
+    if (lookup_result)
     {
-        return frame_cache->lookup(frame_key);
+        return lookup_result;
     }
-    catch (LRUCache<uintptr_t, Frame>::LookupError&)
+    else
     {
         auto frame = std::make_unique<Frame>(name);
         frame->cache_key = frame_key;
-        auto& f = *frame;
+        Frame* frame_ptr = frame.get();
+        
         Renderer::get().frame(frame_key, frame->filename, frame->name, frame->location.line,
                               frame->location.line_end, frame->location.column,
                               frame->location.column_end);
-        frame_cache->store(frame_key, std::move(frame));
-        return f;
+        
+        auto store_result = frame_cache->store(frame_key, std::move(frame));
+        if (store_result)
+        {
+            return Result<Frame*>(frame_ptr);
+        }
+        
+        return Result<Frame*>::error();
     }
 }

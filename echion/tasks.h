@@ -169,14 +169,10 @@ TaskInfo::TaskInfo(TaskObj* task_addr)
 
     origin = (PyObject*)task_addr;
 
-    try
-    {
-        name = string_table.key(task.task_name);
-    }
-    catch (StringTable::Error&)
-    {
+    auto name_result = string_table.key(task.task_name);
+    if (!name_result)
         throw Error();
-    }
+    name = *name_result;
 
     loop = task.task_loop;
 

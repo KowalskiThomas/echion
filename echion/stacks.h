@@ -96,14 +96,10 @@ void unwind_native_stack()
 
     while (unw_step(&cursor) > 0 && native_stack.size() < max_frames)
     {
-        try
-        {
-            native_stack.push_back(Frame::get(cursor));
-        }
-        catch (Frame::Error&)
-        {
+        auto frame_result = Frame::get(cursor);
+        if (!frame_result)
             break;
-        }
+        native_stack.push_back(**frame_result);
     }
 }
 #endif  // UNWIND_NATIVE_DISABLE
@@ -122,21 +118,16 @@ static size_t unwind_frame(PyObject* frame_addr, FrameStack& stack)
 
         seen_frames.insert(current_frame_addr);
 
-        try
-        {
 #if PY_VERSION_HEX >= 0x030b0000
-            Frame& frame =
-                Frame::read(reinterpret_cast<_PyInterpreterFrame*>(current_frame_addr),
-                            reinterpret_cast<_PyInterpreterFrame**>(&current_frame_addr));
+        auto frame_result = 
+            Frame::read(reinterpret_cast<_PyInterpreterFrame*>(current_frame_addr),
+                        reinterpret_cast<_PyInterpreterFrame**>(&current_frame_addr));
 #else
-            Frame& frame = Frame::read(current_frame_addr, &current_frame_addr);
+        auto frame_result = Frame::read(current_frame_addr, &current_frame_addr);
 #endif
-            stack.push_back(frame);
-        }
-        catch (Frame::Error& e)
-        {
+        if (!frame_result)
             break;
-        }
+        stack.push_back(**frame_result);
 
         count++;
     }
@@ -176,7 +167,10 @@ static size_t unwind_frame_unsafe(PyObject* frame, FrameStack& stack)
 
         seen_frames.insert(current_frame);
 
-        stack.push_back(Frame::get(current_frame));
+        auto frame_result = Frame::get(current_frame);
+        if (!frame_result)
+            break;
+        stack.push_back(**frame_result);
 
 #if PY_VERSION_HEX >= 0x030b0000
         current_frame = (PyObject*)((_PyInterpreterFrame*)current_frame)->previous;
@@ -270,8 +264,10 @@ static void interleave_stacks(FrameStack& python_stack)
     {
         auto native_frame = *n;
 
-        if (string_table.lookup(native_frame.get().name).find("PyEval_EvalFrameDefault") !=
-            std::string::npos)
+        auto name_lookup = string_table.lookup(native_frame.get().name);
+        if (!name_lookup)
+            continue;
+        if ((*name_lookup)->find("PyEval_EvalFrameDefault") != std::string::npos)
         {
             if (p == python_stack.rend())
             {

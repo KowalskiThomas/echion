@@ -271,7 +271,9 @@ void ThreadInfo::unwind_tasks()
             }
 
             // Add the task name frame
-            stack.push_back(Frame::get(task.name));
+            auto frame_result = Frame::get(task.name);
+            if (frame_result)
+                stack.push_back(**frame_result);
 
             // Get the next task in the chain
             PyObject* task_origin = task.origin;
@@ -425,8 +427,9 @@ void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
     {
         for (auto& task_stack_info : current_tasks)
         {
-            Renderer::get().render_task_begin(string_table.lookup(task_stack_info->task_name),
-                                              task_stack_info->on_cpu);
+            auto task_name_lookup = string_table.lookup(task_stack_info->task_name);
+            std::string task_name = task_name_lookup ? **task_name_lookup : "<unknown>";
+            Renderer::get().render_task_begin(task_name, task_stack_info->on_cpu);
             Renderer::get().render_stack_begin(pid, iid, name);
             if (native)
             {
@@ -449,8 +452,9 @@ void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
     {
         for (auto& greenlet_stack : current_greenlets)
         {
-            Renderer::get().render_task_begin(string_table.lookup(greenlet_stack->task_name),
-                                              greenlet_stack->on_cpu);
+            auto greenlet_name_lookup = string_table.lookup(greenlet_stack->task_name);
+            std::string greenlet_name = greenlet_name_lookup ? **greenlet_name_lookup : "<unknown>";
+            Renderer::get().render_task_begin(greenlet_name, greenlet_stack->on_cpu);
             Renderer::get().render_stack_begin(pid, iid, name);
 
             auto& stack = greenlet_stack->stack;
