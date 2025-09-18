@@ -37,6 +37,24 @@
 #include <echion/threads.h>
 #include <echion/timing.h>
 
+std::vector<std::chrono::duration<double>> durations;
+
+struct ShutdownPrinter {
+    ~ShutdownPrinter() {
+        std::cout << "[";
+        for (size_t i = 0; i < durations.size(); i++) {
+            const auto& duration = durations[i];
+            std::cout << duration.count();
+            if (i < durations.size() - 1) {
+                std::cout << ", ";
+            }
+        }
+        std::cout << "]" << std::endl;
+    }
+};
+
+ShutdownPrinter printer;
+
 // ----------------------------------------------------------------------------
 static void do_where(std::ostream& stream)
 {
@@ -214,11 +232,14 @@ static inline void _sampler()
         {
             microsecond_t wall_time = now - last_time;
 
+            auto start = std::chrono::high_resolution_clock::now();
             for_each_interp([=](InterpreterInfo& interp) -> void {
                 for_each_thread(interp, [=](PyThreadState* tstate, ThreadInfo& thread) {
                     thread.sample(interp.id, tstate, wall_time);
                 });
             });
+            auto end = std::chrono::high_resolution_clock::now();
+            durations.push_back(end - start);
         }
 
         while (gettime() < end_time && running)
