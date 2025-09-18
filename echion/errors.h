@@ -127,7 +127,9 @@ enum class StackError {
     SUCCESS = 0,
     UNWIND_FAILED = 1,
     INVALID_FRAME = 2,
-    COPY_FAILED = 3
+    COPY_FAILED = 3,
+    CHUNK_UPDATE_FAILED = 4,
+    MEMORY_ALLOCATION_FAILED = 5
 };
 
 // Memory/VM error codes

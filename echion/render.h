@@ -28,7 +28,7 @@ enum MetricType
 class RendererInterface
 {
 public:
-    virtual void open() = 0;
+    virtual bool open() = 0;
     virtual void close() = 0;
     virtual void header() = 0;
     virtual void metadata(const std::string& label, const std::string& value) = 0;
@@ -102,7 +102,7 @@ public:
         return true;
     }
 
-    void open() override {};
+    bool open() override { return true; };
     void close() override {};
     void header() override {};
     void metadata(const std::string& label, const std::string& value) override {};
@@ -184,14 +184,15 @@ class MojoRenderer : public RendererInterface
 public:
     MojoRenderer() = default;
 
-    void open() override
+    bool open() override
     {
         output.open(std::getenv("ECHION_OUTPUT"));
         if (!output.is_open())
         {
             std::cerr << "Failed to open output file " << std::getenv("ECHION_OUTPUT") << std::endl;
-            throw std::runtime_error("Failed to open output file");
+            return false;
         }
+        return true;
     }
 
     // ------------------------------------------------------------------------
@@ -423,9 +424,9 @@ public:
         getActiveRenderer()->render_message(msg);
     }
 
-    void open()
+    bool open()
     {
-        getActiveRenderer()->open();
+        return getActiveRenderer()->open();
     }
 
     void close()

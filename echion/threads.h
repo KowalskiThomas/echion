@@ -22,6 +22,7 @@
 #include <mach/mach.h>
 #endif
 
+#include <echion/errors.h>
 #include <echion/greenlets.h>
 #include <echion/render.h>
 #include <echion/signals.h>
@@ -34,14 +35,6 @@ class ThreadInfo
 public:
     using Ptr = std::unique_ptr<ThreadInfo>;
 
-    class Error : public std::exception
-    {
-    public:
-        const char* what() const noexcept override
-        {
-            return "Cannot create thread info object";
-        }
-    };
 
     uintptr_t thread_id;
     unsigned long native_id;
@@ -63,17 +56,28 @@ public:
     void sample(int64_t, PyThreadState*, microsecond_t);
     void unwind(PyThreadState*);
 
-    // ------------------------------------------------------------------------
-    ThreadInfo(uintptr_t thread_id, unsigned long native_id, const char* name)
-        : thread_id(thread_id), native_id(native_id), name(name)
+    static Result<std::unique_ptr<ThreadInfo>> create(uintptr_t thread_id, unsigned long native_id, const char* name)
     {
+        auto thread_info = std::make_unique<ThreadInfo>();
+        thread_info->thread_id = thread_id;
+        thread_info->native_id = native_id;
+        thread_info->name = name;
+
 #if defined PL_LINUX
-        pthread_getcpuclockid((pthread_t)thread_id, &cpu_clock_id);
+        if (pthread_getcpuclockid((pthread_t)thread_id, &thread_info->cpu_clock_id) != 0) {
+            return Result<std::unique_ptr<ThreadInfo>>();  // Failed
+        }
 #elif defined PL_DARWIN
-        mach_port = pthread_mach_thread_np((pthread_t)thread_id);
+        thread_info->mach_port = pthread_mach_thread_np((pthread_t)thread_id);
+        if (thread_info->mach_port == MACH_PORT_NULL) {
+            return Result<std::unique_ptr<ThreadInfo>>();  // Failed
+        }
 #endif
-        update_cpu_time();
-    };
+        thread_info->update_cpu_time();
+        return Result<std::unique_ptr<ThreadInfo>>(std::move(thread_info));
+    }
+
+    ThreadInfo() = default;
 
 private:
     void unwind_tasks();
@@ -165,14 +169,7 @@ void ThreadInfo::unwind(PyThreadState* tstate)
         unwind_python_stack(tstate);
         if (asyncio_loop)
         {
-            try
-            {
-                unwind_tasks();
-            }
-            catch (TaskInfo::Error&)
-            {
-                // We failed to unwind tasks
-            }
+            unwind_tasks();
         }
 
         // We make the assumption that gevent and asyncio are not mixed
@@ -526,31 +523,28 @@ static void for_each_thread(InterpreterInfo& interp,
 #else
                 auto native_id = getpid();
 #endif
-                try
+                bool main_thread_tracked = false;
+                for (auto& kv : thread_info_map)
                 {
-                    bool main_thread_tracked = false;
-                    for (auto& kv : thread_info_map)
+                    if (kv.second->name == "MainThread")
                     {
-                        if (kv.second->name == "MainThread")
-                        {
-                            main_thread_tracked = true;
-                            break;
-                        }
+                        main_thread_tracked = true;
+                        break;
                     }
-                    if (main_thread_tracked)
-                        continue;
-
-                    thread_info_map.emplace(
-                        tstate.thread_id,
-                        std::make_unique<ThreadInfo>(tstate.thread_id, native_id, "MainThread"));
                 }
-                catch (ThreadInfo::Error&)
+                if (main_thread_tracked)
+                    continue;
+
+                auto thread_info_result = ThreadInfo::create(tstate.thread_id, native_id, "MainThread");
+                if (!thread_info_result)
                 {
                     // We failed to create the thread info object so we skip it.
                     // We'll likely try again later with the valid thread
                     // information.
                     continue;
                 }
+                
+                thread_info_map.emplace(tstate.thread_id, std::move(*thread_info_result));
             }
 
             // Call back with the thread state and thread info.

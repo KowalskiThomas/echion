@@ -7,21 +7,13 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
-#include <exception>
 #include <memory>
 
+#include <echion/errors.h>
 #include <echion/vm.h>
 
 // ----------------------------------------------------------------------------
 
-class StackChunkError : public std::exception
-{
-public:
-    const char* what() const noexcept override
-    {
-        return "Cannot create stack chunk object";
-    }
-};
 
 // ----------------------------------------------------------------------------
 class StackChunk
@@ -29,7 +21,7 @@ class StackChunk
 public:
     StackChunk() {}
 
-    inline void update(_PyStackChunk* chunk_addr);
+    inline Result<void> update(_PyStackChunk* chunk_addr);
     inline void* resolve(void* frame_addr);
 
 private:
@@ -47,12 +39,12 @@ private:
 };
 
 // ----------------------------------------------------------------------------
-void StackChunk::update(_PyStackChunk* chunk_addr)
+Result<void> StackChunk::update(_PyStackChunk* chunk_addr)
 {
     _PyStackChunk chunk;
 
     if (copy_type(chunk_addr, chunk))
-        throw StackChunkError();
+        return Result<void>::error();
 
     origin = chunk_addr;
     // if data_size is not enough, reallocate
@@ -62,7 +54,7 @@ void StackChunk::update(_PyStackChunk* chunk_addr)
         char* new_data = (char*)realloc(data.get(), data_capacity);
         if (!new_data)
         {
-            throw StackChunkError();
+            return Result<void>::error();
         }
         data.release();  // Release the old pointer before resetting
         data.reset(new_data);
@@ -70,21 +62,21 @@ void StackChunk::update(_PyStackChunk* chunk_addr)
 
     // Copy the data up until the size of the chunk
     if (copy_generic(chunk_addr, data.get(), chunk.size))
-        throw StackChunkError();
+        return Result<void>::error();
 
     if (chunk.previous != NULL)
     {
-        try
-        {
-            if (previous == nullptr)
-                previous = std::make_unique<StackChunk>();
-            previous->update((_PyStackChunk*)chunk.previous);
-        }
-        catch (StackChunkError& e)
+        if (previous == nullptr)
+            previous = std::make_unique<StackChunk>();
+        auto result = previous->update((_PyStackChunk*)chunk.previous);
+        if (!result)
         {
             previous = nullptr;
+            // Continue processing even if previous chunk fails
         }
     }
+    
+    return Result<void>::ok();
 }
 
 // ----------------------------------------------------------------------------

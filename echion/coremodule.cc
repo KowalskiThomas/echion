@@ -104,11 +104,7 @@ static inline void _start()
 {
     init_frame_cache(CACHE_MAX_ENTRIES * (1 + native));
 
-    try
-    {
-        Renderer::get().open();
-    }
-    catch (std::exception& e)
+    if (!Renderer::get().open())
     {
         return;
     }
@@ -305,12 +301,17 @@ static PyObject* track_thread(PyObject* Py_UNUSED(m), PyObject* args)
         const std::lock_guard<std::mutex> guard(thread_info_map_lock);
 
         auto entry = thread_info_map.find(thread_id);
+        auto thread_info_result = ThreadInfo::create(thread_id, native_id, thread_name);
+        if (!thread_info_result) {
+            PyErr_SetString(PyExc_RuntimeError, "Failed to create thread info object");
+            return NULL;
+        }
+        
         if (entry != thread_info_map.end())
             // Thread is already tracked so we update its info
-            entry->second = std::make_unique<ThreadInfo>(thread_id, native_id, thread_name);
+            entry->second = std::move(*thread_info_result);
         else
-            thread_info_map.emplace(
-                thread_id, std::make_unique<ThreadInfo>(thread_id, native_id, thread_name));
+            thread_info_map.emplace(thread_id, std::move(*thread_info_result));
     }
 
     Py_RETURN_NONE;

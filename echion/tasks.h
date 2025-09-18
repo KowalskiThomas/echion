@@ -22,7 +22,6 @@
 #include <opcode.h>
 #endif  // PY_VERSION_HEX >= 0x30b0000
 
-#include <exception>
 #include <mutex>
 #include <stack>
 #include <unordered_map>
@@ -43,15 +42,6 @@ class GenInfo
 public:
     typedef std::unique_ptr<GenInfo> Ptr;
 
-    class Error : public std::exception
-    {
-    public:
-        const char* what() const noexcept override
-        {
-            return "Cannot create generator info object";
-        }
-    };
-
     PyObject* origin = NULL;
     PyObject* frame = NULL;
 
@@ -59,51 +49,63 @@ public:
 
     bool is_running = false;
 
-    GenInfo(PyObject* gen_addr);
+    static Result<GenInfo> create(PyObject* gen_addr);
+
+    GenInfo(GenInfo&& other) noexcept = default;
+    GenInfo& operator=(GenInfo&& other) noexcept = default;
+
+private:
+    GenInfo() = default;
+    GenInfo(const GenInfo&) = delete;
+    GenInfo& operator=(const GenInfo&) = delete;
 };
 
-GenInfo::GenInfo(PyObject* gen_addr)
+Result<GenInfo> GenInfo::create(PyObject* gen_addr)
 {
+    GenInfo gen_info;
     PyGenObject gen;
 
     if (copy_type(gen_addr, gen) || !PyCoro_CheckExact(&gen))
-        throw Error();
+        return Result<GenInfo>::error();
 
-    origin = gen_addr;
+    gen_info.origin = gen_addr;
 
 #if PY_VERSION_HEX >= 0x030b0000
     // The frame follows the generator object
-    frame = (gen.gi_frame_state == FRAME_CLEARED)
+    gen_info.frame = (gen.gi_frame_state == FRAME_CLEARED)
                 ? NULL
                 : (PyObject*)((char*)gen_addr + offsetof(PyGenObject, gi_iframe));
 #else
-    frame = (PyObject*)gen.gi_frame;
+    gen_info.frame = (PyObject*)gen.gi_frame;
 #endif
 
     PyFrameObject f;
-    if (copy_type(frame, f))
-        throw Error();
+    if (copy_type(gen_info.frame, f))
+        return Result<GenInfo>::error();
 
-    PyObject* yf = (frame != NULL ? PyGen_yf(&gen, frame) : NULL);
+    PyObject* yf = (gen_info.frame != NULL ? PyGen_yf(&gen, gen_info.frame) : NULL);
     if (yf != NULL && yf != gen_addr)
     {
-        try
+        auto await_result = GenInfo::create(yf);
+        if (await_result)
         {
-            await = std::make_unique<GenInfo>(yf);
+            gen_info.await = std::make_unique<GenInfo>(std::move(*await_result));
         }
-        catch (GenInfo::Error&)
+        else
         {
-            await = nullptr;
+            gen_info.await = nullptr;
         }
     }
 
 #if PY_VERSION_HEX >= 0x030b0000
-    is_running = (gen.gi_frame_state == FRAME_EXECUTING);
+    gen_info.is_running = (gen.gi_frame_state == FRAME_EXECUTING);
 #elif PY_VERSION_HEX >= 0x030a0000
-    is_running = (frame != NULL) ? _PyFrame_IsExecuting(&f) : false;
+    gen_info.is_running = (gen_info.frame != NULL) ? _PyFrame_IsExecuting(&f) : false;
 #else
-    is_running = gen.gi_running;
+    gen_info.is_running = gen.gi_running;
 #endif
+
+    return Result<GenInfo>(std::move(gen_info));
 }
 
 // ----------------------------------------------------------------------------
@@ -113,24 +115,6 @@ class TaskInfo
 public:
     typedef std::unique_ptr<TaskInfo> Ptr;
     typedef std::reference_wrapper<TaskInfo> Ref;
-
-    class Error : public std::exception
-    {
-    public:
-        const char* what() const noexcept override
-        {
-            return "Cannot create task info object";
-        }
-    };
-
-    class GeneratorError : public Error
-    {
-    public:
-        const char* what() const noexcept override
-        {
-            return "Cannot create generator info object";
-        }
-    };
 
     PyObject* origin = NULL;
     PyObject* loop = NULL;
@@ -142,73 +126,83 @@ public:
     // Information to reconstruct the async stack as best as we can
     TaskInfo::Ptr waiter = nullptr;
 
-    TaskInfo(TaskObj*);
+    static Result<TaskInfo> create(TaskObj*);
 
-    static TaskInfo current(PyObject*);
+    static Result<TaskInfo> current(PyObject*);
+    
+    TaskInfo(TaskInfo&& other) noexcept = default;
+    TaskInfo& operator=(TaskInfo&& other) noexcept = default;
+    
     inline size_t unwind(FrameStack&);
+
+private:
+    TaskInfo() = default;
+    TaskInfo(const TaskInfo&) = delete;
+    TaskInfo& operator=(const TaskInfo&) = delete;
 };
 
 inline std::unordered_map<PyObject*, PyObject*> task_link_map;
 inline std::mutex task_link_map_lock;
 
 // ----------------------------------------------------------------------------
-TaskInfo::TaskInfo(TaskObj* task_addr)
+Result<TaskInfo> TaskInfo::create(TaskObj* task_addr)
 {
+    TaskInfo task_info;
     TaskObj task;
+    
     if (copy_type(task_addr, task))
-        throw Error();
+        return Result<TaskInfo>::error();
 
-    try
-    {
-        coro = std::make_unique<GenInfo>(task.task_coro);
-    }
-    catch (GenInfo::Error&)
-    {
-        throw GeneratorError();
-    }
+    auto coro_result = GenInfo::create(task.task_coro);
+    if (!coro_result)
+        return Result<TaskInfo>::error();
+        
+    task_info.coro = std::make_unique<GenInfo>(std::move(*coro_result));
 
-    origin = (PyObject*)task_addr;
+    task_info.origin = (PyObject*)task_addr;
 
     auto name_result = string_table.key(task.task_name);
     if (!name_result)
-        throw Error();
-    name = *name_result;
+        return Result<TaskInfo>::error();
+    task_info.name = *name_result;
 
-    loop = task.task_loop;
+    task_info.loop = task.task_loop;
 
     if (task.task_fut_waiter)
     {
-        try
+        auto waiter_result = TaskInfo::create((TaskObj*)task.task_fut_waiter);
+        if (waiter_result)
         {
-            waiter =
-                std::make_unique<TaskInfo>((TaskObj*)task.task_fut_waiter);  // TODO: Make lazy?
+            task_info.waiter = std::make_unique<TaskInfo>(std::move(*waiter_result));
         }
-        catch (TaskInfo::Error&)
+        else
         {
-            waiter = nullptr;
+            task_info.waiter = nullptr;
         }
     }
+    
+    return Result<TaskInfo>(std::move(task_info));
 }
 
 // ----------------------------------------------------------------------------
-TaskInfo TaskInfo::current(PyObject* loop)
+Result<TaskInfo> TaskInfo::current(PyObject* loop)
 {
     if (loop == NULL)
-        throw Error();
+        return Result<TaskInfo>::error();
 
     auto dict_result = MirrorDict::create(asyncio_current_tasks);
     if (!dict_result)
-        throw Error();
+        return Result<TaskInfo>::error();
     
     auto task_result = (*dict_result).get_item(loop);
     if (!task_result)
-        throw Error();
+        return Result<TaskInfo>::error();
         
     PyObject* task = *task_result;
     if (task == NULL)
-        throw Error();
+        return Result<TaskInfo>::error();
 
-    return TaskInfo((TaskObj*)task);
+    return TaskInfo::create((TaskObj*)task);
 }
 
 // ----------------------------------------------------------------------------
@@ -232,15 +226,12 @@ std::vector<TaskInfo::Ptr> get_all_tasks(PyObject* loop)
             if (copy_type(task_wr_addr, task_wr))
                 continue;
 
-            try
+            auto task_result = TaskInfo::create((TaskObj*)task_wr.wr_object);
+            if (task_result)
             {
-                auto task_info = std::make_unique<TaskInfo>((TaskObj*)task_wr.wr_object);
+                auto task_info = std::make_unique<TaskInfo>(std::move(*task_result));
                 if (task_info->loop == loop)
                     tasks.push_back(std::move(task_info));
-            }
-            catch (TaskInfo::Error& e)
-            {
-                // We failed to get this task but we keep going
             }
         }
 
@@ -254,15 +245,12 @@ std::vector<TaskInfo::Ptr> get_all_tasks(PyObject* loop)
                 {
                     for (auto task_addr : *eager_tasks_result)
                     {
-                        try
+                        auto task_result = TaskInfo::create((TaskObj*)task_addr);
+                        if (task_result)
                         {
-                            auto task_info = std::make_unique<TaskInfo>((TaskObj*)task_addr);
+                            auto task_info = std::make_unique<TaskInfo>(std::move(*task_result));
                             if (task_info->loop == loop)
                                 tasks.push_back(std::move(task_info));
-                        }
-                        catch (TaskInfo::Error& e)
-                        {
-                            // We failed to get this task but we keep going
                         }
                     }
                 }
