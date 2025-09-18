@@ -11,6 +11,7 @@
 #include <exception>
 
 #include <echion/vm.h>
+#include <echion/exc_helper.h>
 
 class LongError : public std::exception
 {
@@ -28,11 +29,9 @@ static long long pylong_to_llong(PyObject* long_addr)
     PyLongObject long_obj;
     long long ret = 0;
 
-    if (copy_type(long_addr, long_obj))
-        throw LongError();
+    maybe_throw<LongError>(copy_type(long_addr, long_obj));
 
-    if (!PyLong_CheckExact(&long_obj))
-        throw LongError();
+    maybe_throw<LongError>(!PyLong_CheckExact(&long_obj));
 
     if (_PyLong_IsCompact(&long_obj))
     {

@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <echion/exc_helper.h>
+
 #include <exception>
 #include <list>
 #include <memory>
@@ -17,7 +19,7 @@ class LRUCache
 public:
     LRUCache(size_t capacity) : capacity(capacity) {}
 
-    V& lookup(const K& k);
+    V* lookup(const K& k);
 
     void store(const K& k, std::unique_ptr<V> v);
 
@@ -54,14 +56,13 @@ void LRUCache<K, V>::store(const K& k, std::unique_ptr<V> v)
 }
 
 template <typename K, typename V>
-V& LRUCache<K, V>::lookup(const K& k)
+V* LRUCache<K, V>::lookup(const K& k)
 {
     auto itr = index.find(k);
-    if (itr == index.end())
-        throw LookupError();
+    maybe_throw<LookupError>(itr == index.end());
 
     // Move to the front of the list
     items.splice(items.begin(), items, itr->second);
 
-    return *(itr->second->second.get());
+    return itr->second->second.get();
 }

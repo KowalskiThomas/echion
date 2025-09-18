@@ -1,0 +1,14 @@
+echion python3 -c 'import numpy, sys; sys.exit(numpy.test() is False)'
+
+Stats for N11StringTable11LookupErrorE: Return count: 372, Exception count: 0
+Stats for N8TaskInfo14GeneratorErrorE: Return count: 468, Exception count: 468
+Stats for N7GenInfo5ErrorE: Return count: 1713, Exception count: 840
+Stats for N8TaskInfo5ErrorE: Return count: 914, Exception count: 1
+Stats for 11MirrorError: Return count: 148, Exception count: 0
+Stats for N11StringTable5ErrorE: Return count: 3851, Exception count: 3851
+Stats for N5Frame13LocationErrorE: Return count: 1519970, Exception count: 715
+Stats for N5Frame5ErrorE: Return count: 95707, Exception count: 7217
+Stats for 11StringError: Return count: 30943, Exception count: 3851
+Stats for N8LRUCacheIm5FrameE11LookupErrorE: Return count: 9025267, Exception count: 31854
+Stats for 15StackChunkError: Return count: 1156744, Exception count: 76
+Stats for std::runtime_error: Return count: 1, Exception count: 0

@@ -23,6 +23,7 @@
 #endif  // PY_VERSION_HEX >= 0x30b0000
 
 #include <exception>
+#include <iostream>
 #include <mutex>
 #include <stack>
 #include <unordered_map>
@@ -35,6 +36,7 @@
 #include <echion/state.h>
 #include <echion/strings.h>
 #include <echion/timing.h>
+#include <echion/exc_helper.h>
 
 #include <echion/cpython/tasks.h>
 
@@ -66,8 +68,7 @@ GenInfo::GenInfo(PyObject* gen_addr)
 {
     PyGenObject gen;
 
-    if (copy_type(gen_addr, gen) || !PyCoro_CheckExact(&gen))
-        throw Error();
+    maybe_throw<Error>(copy_type(gen_addr, gen) || !PyCoro_CheckExact(&gen));
 
     origin = gen_addr;
 
@@ -81,8 +82,7 @@ GenInfo::GenInfo(PyObject* gen_addr)
 #endif
 
     PyFrameObject f;
-    if (copy_type(frame, f))
-        throw Error();
+    maybe_throw<Error>(copy_type(frame, f));
 
     PyObject* yf = (frame != NULL ? PyGen_yf(&gen, frame) : NULL);
     if (yf != NULL && yf != gen_addr)
@@ -155,8 +155,7 @@ inline std::mutex task_link_map_lock;
 TaskInfo::TaskInfo(TaskObj* task_addr)
 {
     TaskObj task;
-    if (copy_type(task_addr, task))
-        throw Error();
+    maybe_throw<Error>(copy_type(task_addr, task));
 
     try
     {
@@ -164,7 +163,7 @@ TaskInfo::TaskInfo(TaskObj* task_addr)
     }
     catch (GenInfo::Error&)
     {
-        throw GeneratorError();
+        maybe_throw<GeneratorError>(true);
     }
 
     origin = (PyObject*)task_addr;
@@ -175,7 +174,7 @@ TaskInfo::TaskInfo(TaskObj* task_addr)
     }
     catch (StringTable::Error&)
     {
-        throw Error();
+        maybe_throw<Error>(true);
     }
 
     loop = task.task_loop;
@@ -197,21 +196,20 @@ TaskInfo::TaskInfo(TaskObj* task_addr)
 // ----------------------------------------------------------------------------
 TaskInfo TaskInfo::current(PyObject* loop)
 {
-    if (loop == NULL)
-        throw Error();
+    maybe_throw<Error>(loop == NULL);
 
     try
     {
         MirrorDict current_tasks_dict(asyncio_current_tasks);
         PyObject* task = current_tasks_dict.get_item(loop);
-        if (task == NULL)
-            throw Error();
+        maybe_throw<Error>(task == NULL);
 
         return TaskInfo((TaskObj*)task);
     }
     catch (MirrorError& e)
     {
-        throw Error();
+        maybe_throw<Error>(true);
+        return TaskInfo((TaskObj*)nullptr); // Never reached but needed for compilation
     }
 }
 
@@ -266,11 +264,13 @@ std::vector<TaskInfo::Ptr> get_all_tasks(PyObject* loop)
             }
         }
 
+        maybe_throw<TaskInfo::Error>(false);
         return tasks;
     }
     catch (MirrorError& e)
     {
-        throw TaskInfo::Error();
+        maybe_throw<TaskInfo::Error>(true);
+        return tasks; // Never reached but needed for compilation
     }
 }
 

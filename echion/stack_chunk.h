@@ -8,9 +8,11 @@
 #include <Python.h>
 
 #include <exception>
+#include <iostream>
 #include <memory>
 
 #include <echion/vm.h>
+#include <echion/exc_helper.h>
 
 // ----------------------------------------------------------------------------
 
@@ -51,8 +53,7 @@ void StackChunk::update(_PyStackChunk* chunk_addr)
 {
     _PyStackChunk chunk;
 
-    if (copy_type(chunk_addr, chunk))
-        throw StackChunkError();
+    maybe_throw<StackChunkError>(copy_type(chunk_addr, chunk));
 
     origin = chunk_addr;
     // if data_size is not enough, reallocate
@@ -60,17 +61,13 @@ void StackChunk::update(_PyStackChunk* chunk_addr)
     {
         data_capacity = chunk.size;
         char* new_data = (char*)realloc(data.get(), data_capacity);
-        if (!new_data)
-        {
-            throw StackChunkError();
-        }
+        maybe_throw<StackChunkError>(!new_data);
         data.release();  // Release the old pointer before resetting
         data.reset(new_data);
     }
 
     // Copy the data up until the size of the chunk
-    if (copy_generic(chunk_addr, data.get(), chunk.size))
-        throw StackChunkError();
+    maybe_throw<StackChunkError>(copy_generic(chunk_addr, data.get(), chunk.size));
 
     if (chunk.previous != NULL)
     {

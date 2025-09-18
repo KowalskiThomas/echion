@@ -6,9 +6,11 @@
 
 #include <array>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <echion/exc_helper.h>
 
 #if defined PL_LINUX
 #include <fcntl.h>
@@ -106,10 +108,7 @@ class VmReader
     VmReader(size_t _sz) : sz{_sz}
     {
         buffer = init(sz);
-        if (!buffer)
-        {
-            throw std::runtime_error("Failed to initialize buffer with size " + std::to_string(sz));
-        }
+        maybe_throw<std::runtime_error>(!buffer);
         instance = this;
     }
 

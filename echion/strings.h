@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <exception>
+#include <iostream>
 #include <string>
 
 #ifndef UNWIND_NATIVE_DISABLE
@@ -22,6 +23,7 @@
 #include <echion/long.h>
 #include <echion/render.h>
 #include <echion/vm.h>
+#include <echion/exc_helper.h>
 
 class StringError : public std::exception
 {
@@ -55,26 +57,21 @@ static std::unique_ptr<unsigned char[]> pybytes_to_bytes_and_size(PyObject* byte
 static std::string pyunicode_to_utf8(PyObject* str_addr)
 {
     PyUnicodeObject str;
-    if (copy_type(str_addr, str))
-        throw StringError();
+    maybe_throw<StringError>(copy_type(str_addr, str));
 
     PyASCIIObject& ascii = str._base._base;
 
-    if (ascii.state.kind != 1)
-        throw StringError();
+    maybe_throw<StringError>(ascii.state.kind != 1);
 
     const char* data = ascii.state.compact ? (const char*)(((uint8_t*)str_addr) + sizeof(ascii))
                                            : (const char*)str._base.utf8;
-    if (data == NULL)
-        throw StringError();
+    maybe_throw<StringError>(data == NULL);
 
     Py_ssize_t size = ascii.state.compact ? ascii.length : str._base.utf8_length;
-    if (size < 0 || size > 1024)
-        throw StringError();
+    maybe_throw<StringError>(size < 0 || size > 1024);
 
     auto dest = std::string(size, '\0');
-    if (copy_generic(data, dest.c_str(), size))
-        throw StringError();
+    maybe_throw<StringError>(copy_generic(data, dest.c_str(), size));
 
     return dest;
 }
@@ -124,10 +121,11 @@ public:
 #endif
                 this->emplace(k, str);
                 Renderer::get().string(k, str);
+                maybe_throw<StringError>(false);
             }
             catch (StringError&)
             {
-                throw Error();
+                maybe_throw<Error>(true);
             }
         }
 
@@ -173,10 +171,11 @@ public:
                 std::snprintf(buffer, 32, "native@%p", (void*)k);
                 this->emplace(k, buffer);
                 Renderer::get().string(k, buffer);
+                maybe_throw<StringError>(false);
             }
             catch (StringError&)
             {
-                throw Error();
+                maybe_throw<Error>(true);
             }
         }
 
@@ -189,8 +188,7 @@ public:
         const std::lock_guard<std::mutex> lock(table_lock);
 
         unw_proc_info_t pi;
-        if ((unw_get_proc_info(&cursor, &pi)))
-            throw Error();
+        maybe_throw<Error>(unw_get_proc_info(&cursor, &pi));
 
         auto k = (Key)pi.start_ip;
 
@@ -198,8 +196,7 @@ public:
         {
             unw_word_t offset;  // Ignored. All the information is in the PC anyway.
             char sym[256];
-            if (unw_get_proc_name(&cursor, sym, sizeof(sym), &offset))
-                throw Error();
+            maybe_throw<Error>(unw_get_proc_name(&cursor, sym, sizeof(sym), &offset));
 
             char* name = sym;
 
@@ -229,8 +226,7 @@ public:
         const std::lock_guard<std::mutex> lock(table_lock);
 
         auto it = this->find(key);
-        if (it == this->end())
-            throw LookupError();
+        maybe_throw<LookupError>(it == this->end());
 
         return it->second;
     };

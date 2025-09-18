@@ -53,6 +53,7 @@ typedef PyObject* PyDictValues;
 #include <unordered_set>
 
 #include <echion/vm.h>
+#include <echion/exc_helper.h>
 
 class MirrorError : public std::exception
 {
@@ -68,8 +69,7 @@ class MirrorObject
 public:
     inline PyObject* reflect()
     {
-        if (reflected == NULL)
-            throw MirrorError();
+        maybe_throw<MirrorError>(reflected == NULL);
         return reflected;
     }
 
@@ -95,12 +95,10 @@ private:
 
 MirrorDict::MirrorDict(PyObject* dict_addr)
 {
-    if (copy_type(dict_addr, dict))
-        throw MirrorError();
+    maybe_throw<MirrorError>(copy_type(dict_addr, dict));
 
     PyDictKeysObject keys;
-    if (copy_type(dict.ma_keys, keys))
-        throw MirrorError();
+    maybe_throw<MirrorError>(copy_type(dict.ma_keys, keys));
 
     // Compute the full dictionary data size
 #if PY_VERSION_HEX >= 0x030b0000
@@ -117,14 +115,12 @@ MirrorDict::MirrorDict(PyObject* dict_addr)
 
     // Allocate the buffer
     ssize_t data_size = keys_size + (keys.dk_nentries * entry_size) + values_size;
-    if (data_size < 0 || data_size > (1 << 20))
-        throw MirrorError();
+    maybe_throw<MirrorError>(data_size < 0 || data_size > (1 << 20));
 
     data = std::make_unique<char[]>(data_size);
 
     // Copy the key data and update the pointer
-    if (copy_generic(dict.ma_keys, data.get(), keys_size))
-        throw MirrorError();
+    maybe_throw<MirrorError>(copy_generic(dict.ma_keys, data.get(), keys_size));
 
     dict.ma_keys = (PyDictKeysObject*)data.get();
 
@@ -132,8 +128,7 @@ MirrorDict::MirrorDict(PyObject* dict_addr)
     {
         // Copy the value data and update the pointer
         char* values_addr = data.get() + keys_size;
-        if (copy_generic(dict.ma_values, keys_size, values_size))
-            throw MirrorError();
+        maybe_throw<MirrorError>(copy_generic(dict.ma_values, keys_size, values_size));
 
         dict.ma_values = (PyDictValues*)values_addr;
     }
@@ -155,17 +150,14 @@ private:
 
 MirrorSet::MirrorSet(PyObject* set_addr)
 {
-    if (copy_type(set_addr, set))
-        throw MirrorError();
+    maybe_throw<MirrorError>(copy_type(set_addr, set));
 
     size = set.mask + 1;
     ssize_t table_size = size * sizeof(setentry);
-    if (table_size < 0 || table_size > (1 << 20))
-        throw MirrorError();
+    maybe_throw<MirrorError>(table_size < 0 || table_size > (1 << 20));
 
     data = std::make_unique<char[]>(table_size);
-    if (copy_generic(set.table, data.get(), table_size))
-        throw MirrorError();
+    maybe_throw<MirrorError>(copy_generic(set.table, data.get(), table_size));
 
     set.table = (setentry*)data.get();
 
@@ -174,8 +166,7 @@ MirrorSet::MirrorSet(PyObject* set_addr)
 
 std::unordered_set<PyObject*> MirrorSet::as_unordered_set()
 {
-    if (data == nullptr)
-        throw MirrorError();
+    maybe_throw<MirrorError>(data == nullptr);
 
     std::unordered_set<PyObject*> uset;
 

@@ -1,5 +1,6 @@
 #include <echion/frame.h>
 
+#include <iostream>
 #include <echion/render.h>
 
 // ----------------------------------------------------------------------------
@@ -87,10 +88,11 @@ Frame::Frame(PyCodeObject* code, int lasti)
 #else
         name = string_table.key(code->co_name);
 #endif
+maybe_throw<Error>(false);
     }
     catch (StringTable::Error&)
     {
-        throw Error();
+        maybe_throw<Error>(true);
     }
 
     infer_location(code, lasti);
@@ -104,10 +106,11 @@ Frame::Frame(unw_cursor_t& cursor, unw_word_t pc)
     {
         filename = string_table.key(pc);
         name = string_table.key(cursor);
+maybe_throw<Error>(false);
     }
     catch (StringTable::Error&)
     {
-        throw Error();
+        maybe_throw<Error>(true);
     }
 }
 #endif  // UNWIND_NATIVE_DISABLE
@@ -120,8 +123,9 @@ void Frame::infer_location(PyCodeObject* code_obj, int lasti)
 
 #if PY_VERSION_HEX >= 0x030b0000
     auto table = pybytes_to_bytes_and_size(code_obj->co_linetable, &len);
-    if (table == nullptr)
-        throw LocationError();
+    if (table == nullptr) {
+        maybe_throw<LocationError>(true);
+    }
 
     auto table_data = table.get();
 
@@ -157,8 +161,7 @@ void Frame::infer_location(PyCodeObject* code_obj, int lasti)
             case 12:  // New lineno
             case 11:
             case 10:
-                if (i >= len - 2)
-                    throw LocationError();
+                maybe_throw<LocationError>(i>=len-2);
 
                 lineno += code - 10;
 
@@ -170,8 +173,7 @@ void Frame::infer_location(PyCodeObject* code_obj, int lasti)
                 break;
 
             default:
-                if (i >= len - 1)
-                    throw LocationError();
+                maybe_throw<LocationError>(i>=len-1);
 
                 next_byte = table[++i];
 
@@ -187,8 +189,7 @@ void Frame::infer_location(PyCodeObject* code_obj, int lasti)
 
 #elif PY_VERSION_HEX >= 0x030a0000
     auto table = pybytes_to_bytes_and_size(code_obj->co_linetable, &len);
-    if (table == nullptr)
-        throw LocationError();
+    maybe_throw<LocationError>(table == nullptr);
 
     lasti <<= 1;
     for (int i = 0, bc = 0; i < len; i++)
@@ -212,8 +213,7 @@ void Frame::infer_location(PyCodeObject* code_obj, int lasti)
 
 #else
     auto table = pybytes_to_bytes_and_size(code_obj->co_lnotab, &len);
-    if (table == nullptr)
-        throw LocationError();
+    maybe_throw<LocationError>(table == nullptr);
 
     for (int i = 0, bc = 0; i < len; i++)
     {
@@ -287,26 +287,17 @@ Frame& Frame::read(PyObject* frame_addr, PyObject** prev_addr)
         }
         else
         {
-            if (copy_type(frame_addr, iframe))
-            {
-                throw Frame::Error();
-            }
+            maybe_throw<Error>(copy_type(frame_addr, iframe));
             frame_addr = &iframe;
         }
-        if (copy_type(frame_addr->f_executable, f_executable))
-        {
-            throw Frame::Error();
-        }
+        maybe_throw<Error>(copy_type(frame_addr->f_executable, f_executable));
         if (f_executable.ob_type == &PyCode_Type)
         {
             break;
         }
     }
 
-    if (frame_addr == NULL)
-    {
-        throw Frame::Error();
-    }
+    maybe_throw<Error>(frame_addr == NULL);
 #else   // PY_VERSION_HEX < 0x030d0000
     // Code Specific to Python < 3.13 and >= 3.11
     auto resolved_addr =
@@ -318,10 +309,7 @@ Frame& Frame::read(PyObject* frame_addr, PyObject** prev_addr)
     }
     else
     {
-        if (copy_type(frame_addr, iframe))
-        {
-            throw Frame::Error();
-        }
+        maybe_throw<Error>(copy_type(frame_addr, iframe));
         frame_addr = &iframe;
     }
 #endif  // PY_VERSION_HEX >= 0x030d0000
@@ -357,8 +345,7 @@ Frame& Frame::read(PyObject* frame_addr, PyObject** prev_addr)
     // can print it from root to leaf.
     PyFrameObject py_frame;
 
-    if (copy_type(frame_addr, py_frame))
-        throw Error();
+    maybe_throw<Error>(copy_type(frame_addr, py_frame));
 
     auto& frame = Frame::get(py_frame.f_code, py_frame.f_lasti);
 
@@ -375,7 +362,7 @@ Frame& Frame::get(PyCodeObject* code_addr, int lasti)
 
     try
     {
-        return frame_cache->lookup(frame_key);
+        return *frame_cache->lookup(frame_key);
     }
     catch (LRUCache<uintptr_t, Frame>::LookupError&)
     {
@@ -408,7 +395,7 @@ Frame& Frame::get(PyObject* frame)
 
     try
     {
-        return frame_cache->lookup(frame_key);
+        return *frame_cache->lookup(frame_key);
     }
     catch (LRUCache<uintptr_t, Frame>::LookupError&)
     {
@@ -429,13 +416,12 @@ Frame& Frame::get(unw_cursor_t& cursor)
 {
     unw_word_t pc;
     unw_get_reg(&cursor, UNW_REG_IP, &pc);
-    if (pc == 0)
-        throw Error();
+    maybe_throw<Error>(pc == 0);
 
     uintptr_t frame_key = (uintptr_t)pc;
     try
     {
-        return frame_cache->lookup(frame_key);
+        return *frame_cache->lookup(frame_key);
     }
     catch (LRUCache<uintptr_t, Frame>::LookupError&)
     {
@@ -464,7 +450,7 @@ Frame& Frame::get(StringTable::Key name)
     uintptr_t frame_key = static_cast<uintptr_t>(name);
     try
     {
-        return frame_cache->lookup(frame_key);
+        return *frame_cache->lookup(frame_key);
     }
     catch (LRUCache<uintptr_t, Frame>::LookupError&)
     {

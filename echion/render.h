@@ -15,6 +15,7 @@
 #include <echion/config.h>
 #include <echion/mojo.h>
 #include <echion/timing.h>
+#include <echion/exc_helper.h>
 
 // Forward declaration
 class Frame;
@@ -187,11 +188,7 @@ public:
     void open() override
     {
         output.open(std::getenv("ECHION_OUTPUT"));
-        if (!output.is_open())
-        {
-            std::cerr << "Failed to open output file " << std::getenv("ECHION_OUTPUT") << std::endl;
-            throw std::runtime_error("Failed to open output file");
-        }
+        maybe_throw<std::runtime_error>(!output.is_open());
     }
 
     // ------------------------------------------------------------------------
