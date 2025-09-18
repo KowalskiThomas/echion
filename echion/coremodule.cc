@@ -68,14 +68,19 @@ static void do_where(std::ostream& stream)
 
     for_each_interp([](InterpreterInfo& interp) -> void {
         for_each_thread(interp, [](PyThreadState* tstate, ThreadInfo& thread) -> void {
-            thread.unwind(tstate);
+            auto unwind_result = thread.unwind(tstate);
+            if (!unwind_result)
+                return;  // Skip this thread if unwind fails
             WhereRenderer::get().render_thread_begin(tstate, thread.name, /*cpu_time*/ 0,
                                                      tstate->thread_id, thread.native_id);
 
             if (native)
             {
-                interleave_stacks();
-                interleaved_stack.render_where();
+                if (auto result = interleave_stacks(); result)
+                {
+                    interleaved_stack.render_where();
+                }
+                // If interleave_stacks fails, we skip rendering this sample
             }
             else
                 python_stack.render_where();
@@ -126,11 +131,7 @@ static inline void _start()
 {
     init_frame_cache(CACHE_MAX_ENTRIES * (1 + native));
 
-    try
-    {
-        Renderer::get().open();
-    }
-    catch (std::exception& e)
+    if (!Renderer::get().open())
     {
         return;
     }
@@ -239,11 +240,7 @@ static inline void _sampler()
             auto start = std::chrono::high_resolution_clock::now();
             for_each_interp([=](InterpreterInfo& interp) -> void {
                 for_each_thread(interp, [=](PyThreadState* tstate, ThreadInfo& thread) {
-                    try {
-                        thread.sample(interp.id, tstate, wall_time);
-                    } catch (ThreadInfo::CpuTimeError& e) {
-                        // Silently skip sampling this thread
-                    }
+                    (void)thread.sample(interp.id, tstate, wall_time);
                 });
             });
             auto end = std::chrono::high_resolution_clock::now();
@@ -332,12 +329,19 @@ static PyObject* track_thread(PyObject* Py_UNUSED(m), PyObject* args)
         const std::lock_guard<std::mutex> guard(thread_info_map_lock);
 
         auto entry = thread_info_map.find(thread_id);
+        auto maybe_thread_info = ThreadInfo::create(thread_id, native_id, thread_name);
+        if (!maybe_thread_info)
+        {
+            PyErr_SetString(PyExc_RuntimeError, "Failed to create thread info");
+            return nullptr;
+        }
+        
+        auto thread_info = std::move(*maybe_thread_info);
         if (entry != thread_info_map.end())
             // Thread is already tracked so we update its info
-            entry->second = std::make_unique<ThreadInfo>(thread_id, native_id, thread_name);
+            entry->second = std::move(thread_info);
         else
-            thread_info_map.emplace(
-                thread_id, std::make_unique<ThreadInfo>(thread_id, native_id, thread_name));
+            thread_info_map.emplace(thread_id, std::move(thread_info));
     }
 
     Py_RETURN_NONE;
@@ -414,16 +418,14 @@ static PyObject* track_greenlet(PyObject* Py_UNUSED(m), PyObject* args)
 
     StringTable::Key greenlet_name;
 
-    try
-    {
-        greenlet_name = string_table.key(name);
-    }
-    catch (StringTable::Error&)
+    auto name_result = string_table.key(name);
+    if (!name_result)
     {
         // We failed to get this task but we keep going
         PyErr_SetString(PyExc_RuntimeError, "Failed to get greenlet name from the string table");
         return NULL;
     }
+    greenlet_name = *name_result;
     {
         const std::lock_guard<std::mutex> guard(greenlet_info_map_lock);
 

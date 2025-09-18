@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include <exception>
+#include <echion/errors.h>
 #include <list>
 #include <memory>
 #include <unordered_map>
@@ -17,18 +17,9 @@ class LRUCache
 public:
     LRUCache(size_t capacity) : capacity(capacity) {}
 
-    V& lookup(const K& k);
+    Result<V*> lookup(const K& k);
 
     void store(const K& k, std::unique_ptr<V> v);
-
-    class LookupError : public std::exception
-    {
-    public:
-        const char* what() const noexcept override
-        {
-            return "Key not found in cache";
-        }
-    };
 
 private:
     size_t capacity;
@@ -39,6 +30,9 @@ private:
 template <typename K, typename V>
 void LRUCache<K, V>::store(const K& k, std::unique_ptr<V> v)
 {
+    if (!v)
+        return;
+
     // Check if cache is full
     if (items.size() >= capacity)
     {
@@ -51,17 +45,19 @@ void LRUCache<K, V>::store(const K& k, std::unique_ptr<V> v)
 
     // Insert in the map
     index[k] = items.begin();
+
+    return;
 }
 
 template <typename K, typename V>
-V& LRUCache<K, V>::lookup(const K& k)
+Result<V*> LRUCache<K, V>::lookup(const K& k)
 {
     auto itr = index.find(k);
     if (itr == index.end())
-        throw LookupError();
+        return Result<V*>::error();
 
     // Move to the front of the list
     items.splice(items.begin(), items, itr->second);
 
-    return *(itr->second->second.get());
+    return Result<V*>(itr->second->second.get());
 }

@@ -18,31 +18,22 @@ typedef unsigned short digit;
 #endif  // PYLONG_BITS_IN_DIGIT
 #endif  // PY_VERSION_HEX >= 0x030c0000
 
-#include <exception>
-
+#include <echion/errors.h>
 #include <echion/vm.h>
-
-class LongError : public std::exception
-{
-    const char* what() const noexcept override
-    {
-        return "LongError";
-    }
-};
 
 // ----------------------------------------------------------------------------
 #if PY_VERSION_HEX >= 0x030c0000
-static long long pylong_to_llong(PyObject* long_addr)
+static Result<long long> pylong_to_llong(PyObject* long_addr)
 {
     // Only used to extract a task-id on Python 3.12, omits overflow checks
     PyLongObject long_obj;
     long long ret = 0;
 
     if (copy_type(long_addr, long_obj))
-        throw LongError();
+        return Result<long long>::error();
 
     if (!PyLong_CheckExact(&long_obj))
-        throw LongError();
+        return Result<long long>::error();
 
     if (_PyLong_IsCompact(&long_obj))
     {
@@ -69,6 +60,6 @@ static long long pylong_to_llong(PyObject* long_addr)
         ret *= sign;
     }
 
-    return ret;
+    return Result<long long>(ret);
 }
 #endif

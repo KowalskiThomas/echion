@@ -103,28 +103,28 @@ class VmReader
         return ret;
     }
 
-    VmReader(size_t _sz) : sz{_sz}
+    VmReader(size_t _sz) : sz{_sz}, buffer(nullptr)
     {
         buffer = init(sz);
-        if (!buffer)
+        if (buffer)
         {
-            throw std::runtime_error("Failed to initialize buffer with size " + std::to_string(sz));
+            instance = this;
         }
-        instance = this;
     }
+    
+    bool is_valid() const { return buffer != nullptr; }
 
 public:
     static VmReader* get_instance()
     {
         if (instance == nullptr)
         {
-            try
+            VmReader* reader = new VmReader(1024 * 1024);  // A megabyte?
+            if (!reader->is_valid())
             {
-                instance = new VmReader(1024 * 1024);  // A megabyte?
-            }
-            catch (std::exception& e)
-            {
-                std::cerr << "Failed to initialize VmReader: " << e.what() << std::endl;
+                std::cerr << "Failed to initialize VmReader with buffer size " << reader->sz << std::endl;
+                delete reader;
+                return nullptr;
             }
         }
         return instance;
