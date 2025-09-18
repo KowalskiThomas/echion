@@ -373,11 +373,11 @@ Frame& Frame::get(PyCodeObject* code_addr, int lasti)
 {
     auto frame_key = Frame::key(code_addr, lasti);
 
-    try
+    if (auto frame_ptr = frame_cache->lookup(frame_key))
     {
-        return frame_cache->lookup(frame_key);
+        return *frame_ptr;
     }
-    catch (LRUCache<uintptr_t, Frame>::LookupError&)
+    else
     {
         try
         {
@@ -406,11 +406,10 @@ Frame& Frame::get(PyObject* frame)
 {
     auto frame_key = Frame::key(frame);
 
-    try
-    {
-        return frame_cache->lookup(frame_key);
+    if (auto frame_ptr = frame_cache->lookup(frame_key)) {
+        return *frame_ptr;
     }
-    catch (LRUCache<uintptr_t, Frame>::LookupError&)
+    else
     {
         auto new_frame = std::make_unique<Frame>(frame);
         new_frame->cache_key = frame_key;
@@ -433,11 +432,12 @@ Frame& Frame::get(unw_cursor_t& cursor)
         throw Error();
 
     uintptr_t frame_key = (uintptr_t)pc;
-    try
+    
+    if (auto frame_ptr = frame_cache->lookup(frame_key))
     {
-        return frame_cache->lookup(frame_key);
+        return *frame_ptr;
     }
-    catch (LRUCache<uintptr_t, Frame>::LookupError&)
+    else
     {
         try
         {
@@ -462,11 +462,12 @@ Frame& Frame::get(unw_cursor_t& cursor)
 Frame& Frame::get(StringTable::Key name)
 {
     uintptr_t frame_key = static_cast<uintptr_t>(name);
-    try
+    
+    if (auto frame_ptr = frame_cache->lookup(frame_key))
     {
-        return frame_cache->lookup(frame_key);
+        return *frame_ptr;
     }
-    catch (LRUCache<uintptr_t, Frame>::LookupError&)
+    else
     {
         auto frame = std::make_unique<Frame>(name);
         frame->cache_key = frame_key;
