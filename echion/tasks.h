@@ -196,19 +196,19 @@ TaskInfo TaskInfo::current(PyObject* loop)
     if (loop == NULL)
         throw Error();
 
-    try
-    {
-        MirrorDict current_tasks_dict(asyncio_current_tasks);
-        PyObject* task = current_tasks_dict.get_item(loop);
-        if (task == NULL)
-            throw Error();
-
-        return TaskInfo((TaskObj*)task);
-    }
-    catch (MirrorError& e)
-    {
+    auto dict_result = MirrorDict::create(asyncio_current_tasks);
+    if (!dict_result)
         throw Error();
-    }
+    
+    auto task_result = (*dict_result).get_item(loop);
+    if (!task_result)
+        throw Error();
+        
+    PyObject* task = *task_result;
+    if (task == NULL)
+        throw Error();
+
+    return TaskInfo((TaskObj*)task);
 }
 
 // ----------------------------------------------------------------------------
@@ -219,12 +219,14 @@ std::vector<TaskInfo::Ptr> get_all_tasks(PyObject* loop)
     if (loop == NULL)
         return tasks;
 
-    try
+    auto scheduled_set_result = MirrorSet::create(asyncio_scheduled_tasks);
+    if (scheduled_set_result)
     {
-        MirrorSet scheduled_tasks_set(asyncio_scheduled_tasks);
-        auto scheduled_tasks = scheduled_tasks_set.as_unordered_set();
+        auto scheduled_tasks_result = (*scheduled_set_result).as_unordered_set();
+        if (!scheduled_tasks_result)
+            return tasks;
 
-        for (auto task_wr_addr : scheduled_tasks)
+        for (auto task_wr_addr : *scheduled_tasks_result)
         {
             PyWeakReference task_wr;
             if (copy_type(task_wr_addr, task_wr))
@@ -244,30 +246,31 @@ std::vector<TaskInfo::Ptr> get_all_tasks(PyObject* loop)
 
         if (asyncio_eager_tasks != NULL)
         {
-            MirrorSet eager_tasks_set(asyncio_eager_tasks);
-            auto eager_tasks = eager_tasks_set.as_unordered_set();
-
-            for (auto task_addr : eager_tasks)
+            auto eager_set_result = MirrorSet::create(asyncio_eager_tasks);
+            if (eager_set_result)
             {
-                try
+                auto eager_tasks_result = (*eager_set_result).as_unordered_set();
+                if (eager_tasks_result)
                 {
-                    auto task_info = std::make_unique<TaskInfo>((TaskObj*)task_addr);
-                    if (task_info->loop == loop)
-                        tasks.push_back(std::move(task_info));
-                }
-                catch (TaskInfo::Error& e)
-                {
-                    // We failed to get this task but we keep going
+                    for (auto task_addr : *eager_tasks_result)
+                    {
+                        try
+                        {
+                            auto task_info = std::make_unique<TaskInfo>((TaskObj*)task_addr);
+                            if (task_info->loop == loop)
+                                tasks.push_back(std::move(task_info));
+                        }
+                        catch (TaskInfo::Error& e)
+                        {
+                            // We failed to get this task but we keep going
+                        }
+                    }
                 }
             }
         }
+    }
 
-        return tasks;
-    }
-    catch (MirrorError& e)
-    {
-        throw TaskInfo::Error();
-    }
+    return tasks;
 }
 
 // ----------------------------------------------------------------------------

@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <utility>
+
 // Common result wrapper for error handling
 template<typename T>
 struct Result {
@@ -14,6 +16,7 @@ struct Result {
     
     Result() : success(false) {}
     Result(const T& val) : value(val), success(true) {}
+    Result(T&& val) : value(std::move(val)), success(true) {}
     
     ~Result() {
         if (success) {
