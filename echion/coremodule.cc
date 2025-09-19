@@ -42,14 +42,13 @@
 #include <echion/timing.h>
 
 struct DurationsPrinter {
-    std::vector<std::chrono::duration<double>> durations;
+    std::vector<std::chrono::nanoseconds> durations;
 
     ~DurationsPrinter() {
         std::cout << "[";
         for (size_t i = 0; i < durations.size(); i++) {
             const auto& duration = durations[i];
-            std::cout << std::fixed << std::setprecision(std::numeric_limits<double>::max_digits10) 
-                      << duration.count() << (i < durations.size() - 1 ? ", " : "");
+            std::cout << duration.count() << (i < durations.size() - 1 ? ", " : "");
             
         }
         std::cout << "]" << std::endl;
@@ -239,7 +238,7 @@ static inline void _sampler()
                 });
             });
             auto end = std::chrono::high_resolution_clock::now();
-            printer.durations.push_back(end - start);
+            printer.durations.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start));
         }
 
         while (gettime() < end_time && running)
