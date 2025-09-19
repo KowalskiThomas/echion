@@ -29,6 +29,12 @@ public:
     void* next = NULL;
 };
 
+
+/*
+template <class F>
+static void for_each_interp(F&& callback)
+*/
+
 static void for_each_interp(std::function<void(InterpreterInfo& interp)> callback)
 {
     InterpreterInfo interpreter_info = {0};

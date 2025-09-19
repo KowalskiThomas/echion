@@ -29,6 +29,9 @@
 #include <echion/stacks.h>
 #include <echion/tasks.h>
 #include <echion/timing.h>
+#include <memory_resource>
+
+#include <echion/allocmon.h>
 
 class ThreadInfo
 {
@@ -473,14 +476,21 @@ void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
 }
 
 // ----------------------------------------------------------------------------
-static void for_each_thread(InterpreterInfo& interp,
-                            std::function<void(PyThreadState*, ThreadInfo&)> callback)
-{
-    std::unordered_set<PyThreadState*> threads;
-    std::unordered_set<PyThreadState*> seen_threads;
+/*
+template<class F>
+static void for_each_thread(InterpreterInfo& interp, F&& callback)
+*/
 
-    threads.clear();
-    seen_threads.clear();
+
+static void for_each_thread(InterpreterInfo& interp,
+    std::function<void(PyThreadState*, ThreadInfo&)> callback)
+{
+    alignas(std::max_align_t) static std::byte buf[sizeof(PyThreadState*) * 1024 * 1024];
+    std::pmr::monotonic_buffer_resource pool(buf, sizeof(buf));
+    std::pmr::unordered_set<PyThreadState*> threads{&pool};
+    threads.reserve(32);
+    std::pmr::unordered_set<PyThreadState*> seen_threads{&pool};
+    seen_threads.reserve(32);
 
     // Start from the thread list head
     threads.insert((PyThreadState*)interp.tstate_head);
