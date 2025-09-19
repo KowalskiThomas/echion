@@ -41,6 +41,8 @@
 #include <echion/threads.h>
 #include <echion/timing.h>
 
+#include <echion/allocmon.h>
+
 struct DurationsPrinter {
     std::vector<std::chrono::nanoseconds> durations;
 
@@ -232,11 +234,18 @@ static inline void _sampler()
             microsecond_t wall_time = now - last_time;
 
             auto start = std::chrono::high_resolution_clock::now();
+
+            // printf("Sampling\n");
+            // auto before = allocmon::snap();
             for_each_interp([=](InterpreterInfo& interp) -> void {
                 for_each_thread(interp, [=](PyThreadState* tstate, ThreadInfo& thread) {
                     thread.sample(interp.id, tstate, wall_time);
                 });
             });
+            // auto after = allocmon::snap();
+            // auto d = allocmon::delta(before, after);
+            // std::printf("templated: new=%zu delete=%zu bytes=%zu\n", d.news, d.deletes, d.bytes);
+            
             auto end = std::chrono::high_resolution_clock::now();
             printer.durations.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start));
         }
