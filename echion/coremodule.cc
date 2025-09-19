@@ -15,6 +15,8 @@
 #include <iostream>
 #include <mutex>
 #include <thread>
+#include <vector>
+#include <iostream>
 
 #include <fcntl.h>
 #include <sched.h>
@@ -36,6 +38,22 @@
 #include <echion/state.h>
 #include <echion/threads.h>
 #include <echion/timing.h>
+
+struct DurationsPrinter {
+    std::vector<std::chrono::nanoseconds> durations;
+
+    ~DurationsPrinter() {
+        std::cout << "[";
+        for (size_t i = 0; i < durations.size(); i++) {
+            const auto& duration = durations[i];
+            std::cout << duration.count() << (i < durations.size() - 1 ? ", " : "");
+            
+        }
+        std::cout << "]" << std::endl;
+    }
+};
+
+DurationsPrinter printer;
 
 // ----------------------------------------------------------------------------
 static void do_where(std::ostream& stream)
@@ -214,11 +232,14 @@ static inline void _sampler()
         {
             microsecond_t wall_time = now - last_time;
 
+            auto start = std::chrono::high_resolution_clock::now();
             for_each_interp([=](InterpreterInfo& interp) -> void {
                 for_each_thread(interp, [=](PyThreadState* tstate, ThreadInfo& thread) {
                     thread.sample(interp.id, tstate, wall_time);
                 });
             });
+            auto end = std::chrono::high_resolution_clock::now();
+            printer.durations.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start));
         }
 
         while (gettime() < end_time && running)

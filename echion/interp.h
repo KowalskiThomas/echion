@@ -20,6 +20,16 @@
 #include <echion/state.h>
 #include <echion/vm.h>
 
+template <typename T>
+struct TrackingAllocator {
+    using value_type = T;
+    T* allocate(std::size_t n) {
+        std::cout << "Allocating " << n << " * " << sizeof(T) << " bytes\n";
+        return static_cast<T*>(::operator new(n * sizeof(T)));
+    }
+    void deallocate(T* p, std::size_t) noexcept { ::operator delete(p); }
+};
+
 
 class InterpreterInfo
 {
