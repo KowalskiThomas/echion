@@ -260,6 +260,25 @@ static PyObject* start_async(PyObject* Py_UNUSED(m), PyObject* Py_UNUSED(args))
 // ----------------------------------------------------------------------------
 static PyObject* start(PyObject* Py_UNUSED(m), PyObject* Py_UNUSED(args))
 {
+    // printf("start\n");
+    // std::cerr << "start" << std::endl;
+    // {
+    //     int *arr = static_cast<int *>(malloc(5 * sizeof(int)));
+    //     if (!arr) {
+    //         perror("malloc failed");
+    //     } else {
+    //         std::cerr << "malloc succeeded" << std::endl;
+    //         // Fill within bounds
+    //         for (int i = 0; i < 5; i++) {
+    //             arr[i] = i;
+    //         }
+        
+    //         // Out-of-bounds write (buffer overflow)
+    //         arr[5] = 42;  
+    //     } 
+    // }
+
+
     if (!running)
     {
         // TODO: Since we have a global state, we should not allow multiple ways

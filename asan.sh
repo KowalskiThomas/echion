@@ -1,0 +1,1 @@
+LD_PRELOAD="$(gcc -print-file-name=libasan.so):$(gcc -print-file-name=libstdc++.so.6)" PYTHONMALLOC=malloc echion python3 -X dev to_run.py
