@@ -33,7 +33,7 @@ public:
     inline void* resolve(void* frame_addr);
 
 private:
-    void* origin = NULL;
+    void* origin = nullptr;
     struct FreeDeleter
     {
         void operator()(void* ptr) const
@@ -72,7 +72,7 @@ void StackChunk::update(_PyStackChunk* chunk_addr)
     if (copy_generic(chunk_addr, data.get(), chunk.size))
         throw StackChunkError();
 
-    if (chunk.previous != NULL)
+    if (chunk.previous != nullptr)
     {
         try
         {

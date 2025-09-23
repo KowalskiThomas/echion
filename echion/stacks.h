@@ -115,7 +115,7 @@ static size_t unwind_frame(PyObject* frame_addr, FrameStack& stack)
     int count = 0;
 
     PyObject* current_frame_addr = frame_addr;
-    while (current_frame_addr != NULL && stack.size() < max_frames)
+    while (current_frame_addr != nullptr && stack.size() < max_frames)
     {
         if (seen_frames.find(current_frame_addr) != seen_frames.end())
             break;
@@ -151,14 +151,14 @@ static size_t unwind_frame_unsafe(PyObject* frame, FrameStack& stack)
     int count = 0;
 
     PyObject* current_frame = frame;
-    while (current_frame != NULL && stack.size() < max_frames)
+    while (current_frame != nullptr && stack.size() < max_frames)
     {
         if (seen_frames.find(current_frame) != seen_frames.end())
             break;
 
 #if PY_VERSION_HEX >= 0x030d0000
         // See the comment in unwind_frame()
-        while (current_frame != NULL)
+        while (current_frame != nullptr)
         {
             if (((_PyInterpreterFrame*)current_frame)->f_executable->ob_type == &PyCode_Type)
             {
@@ -167,7 +167,7 @@ static size_t unwind_frame_unsafe(PyObject* frame, FrameStack& stack)
             current_frame = (PyObject*)((_PyInterpreterFrame*)current_frame)->previous;
         }
 
-        if (current_frame == NULL)
+        if (current_frame == nullptr)
         {
             break;
         }

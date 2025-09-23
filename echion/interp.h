@@ -25,15 +25,15 @@ class InterpreterInfo
 {
 public:
     int64_t id = 0;
-    void* tstate_head = NULL;
-    void* next = NULL;
+    void* tstate_head = nullptr;
+    void* next = nullptr;
 };
 
 static void for_each_interp(std::function<void(InterpreterInfo& interp)> callback)
 {
     InterpreterInfo interpreter_info = {0};
 
-    for (char* interp_addr = (char*)runtime->interpreters.head; interp_addr != NULL;
+    for (char* interp_addr = (char*)runtime->interpreters.head; interp_addr != nullptr;
          interp_addr = (char*)interpreter_info.next)
     {
         if (copy_type(interp_addr + offsetof(PyInterpreterState, id), interpreter_info.id))

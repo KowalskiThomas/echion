@@ -52,8 +52,8 @@ public:
         }
     };
 
-    PyObject* origin = NULL;
-    PyObject* frame = NULL;
+    PyObject* origin = nullptr;
+    PyObject* frame = nullptr;
 
     GenInfo::Ptr await = nullptr;
 
@@ -74,7 +74,7 @@ GenInfo::GenInfo(PyObject* gen_addr)
 #if PY_VERSION_HEX >= 0x030b0000
     // The frame follows the generator object
     frame = (gen.gi_frame_state == FRAME_CLEARED)
-                ? NULL
+                ? nullptr
                 : (PyObject*)((char*)gen_addr + offsetof(PyGenObject, gi_iframe));
 #else
     frame = (PyObject*)gen.gi_frame;
@@ -84,8 +84,8 @@ GenInfo::GenInfo(PyObject* gen_addr)
     if (copy_type(frame, f))
         throw Error();
 
-    PyObject* yf = (frame != NULL ? PyGen_yf(&gen, frame) : NULL);
-    if (yf != NULL && yf != gen_addr)
+    PyObject* yf = (frame != nullptr ? PyGen_yf(&gen, frame) : nullptr);
+    if (yf != nullptr && yf != gen_addr)
     {
         try
         {
@@ -100,7 +100,7 @@ GenInfo::GenInfo(PyObject* gen_addr)
 #if PY_VERSION_HEX >= 0x030b0000
     is_running = (gen.gi_frame_state == FRAME_EXECUTING);
 #elif PY_VERSION_HEX >= 0x030a0000
-    is_running = (frame != NULL) ? _PyFrame_IsExecuting(&f) : false;
+    is_running = (frame != nullptr) ? _PyFrame_IsExecuting(&f) : false;
 #else
     is_running = gen.gi_running;
 #endif
@@ -132,8 +132,8 @@ public:
         }
     };
 
-    PyObject* origin = NULL;
-    PyObject* loop = NULL;
+    PyObject* origin = nullptr;
+    PyObject* loop = nullptr;
 
     GenInfo::Ptr coro = nullptr;
 
@@ -197,14 +197,14 @@ TaskInfo::TaskInfo(TaskObj* task_addr)
 // ----------------------------------------------------------------------------
 TaskInfo TaskInfo::current(PyObject* loop)
 {
-    if (loop == NULL)
+    if (loop == nullptr)
         throw Error();
 
     try
     {
         MirrorDict current_tasks_dict(asyncio_current_tasks);
         PyObject* task = current_tasks_dict.get_item(loop);
-        if (task == NULL)
+        if (task == nullptr)
             throw Error();
 
         return TaskInfo((TaskObj*)task);
@@ -220,7 +220,7 @@ TaskInfo TaskInfo::current(PyObject* loop)
 std::vector<TaskInfo::Ptr> get_all_tasks(PyObject* loop)
 {
     std::vector<TaskInfo::Ptr> tasks;
-    if (loop == NULL)
+    if (loop == nullptr)
         return tasks;
 
     try
@@ -246,7 +246,7 @@ std::vector<TaskInfo::Ptr> get_all_tasks(PyObject* loop)
             }
         }
 
-        if (asyncio_eager_tasks != NULL)
+        if (asyncio_eager_tasks != nullptr)
         {
             MirrorSet eager_tasks_set(asyncio_eager_tasks);
             auto eager_tasks = eager_tasks_set.as_unordered_set();
@@ -286,9 +286,9 @@ inline size_t TaskInfo::unwind(FrameStack& stack)
     std::stack<PyObject*> coro_frames;
 
     // Unwind the coro chain
-    for (auto coro = this->coro.get(); coro != NULL; coro = coro->await.get())
+    for (auto coro = this->coro.get(); coro != nullptr; coro = coro->await.get())
     {
-        if (coro->frame != NULL)
+        if (coro->frame != nullptr)
             coro_frames.push(coro->frame);
     }
 

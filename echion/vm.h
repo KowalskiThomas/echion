@@ -22,13 +22,10 @@
 
 typedef pid_t proc_ref_t;
 
+
 ssize_t process_vm_readv(pid_t, const struct iovec*, unsigned long liovcnt,
                          const struct iovec* remote_iov, unsigned long riovcnt,
                          unsigned long flags);
-
-#define copy_type(addr, dest) (copy_memory(pid, addr, sizeof(dest), &dest))
-#define copy_type_p(addr, dest) (copy_memory(pid, addr, sizeof(*dest), dest))
-#define copy_generic(addr, dest, size) (copy_memory(pid, (void*)(addr), size, (void*)(dest)))
 
 #elif defined PL_DARWIN
 #include <mach/mach.h>
@@ -88,7 +85,7 @@ class VmReader
             }
 
             // Map the file
-            ret = mmap(NULL, new_sz, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+            ret = mmap(nullptr, new_sz, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
             if (ret == MAP_FAILED)
             {
                 ret = nullptr;
@@ -303,3 +300,9 @@ inline void _set_pid(pid_t _pid)
 {
     pid = _pid;
 }
+
+
+#define copy_type(addr, dest) (copy_memory(pid, addr, sizeof(dest), &dest))
+#define copy_type_p(addr, dest) (copy_memory(pid, addr, sizeof(*dest), dest))
+#define copy_generic(addr, dest, size) (copy_memory(pid, (void*)(addr), size, (void*)(dest)))
+

@@ -41,7 +41,7 @@ static PyObject* set_interval(PyObject* Py_UNUSED(m), PyObject* args)
 {
     unsigned int new_interval;
     if (!PyArg_ParseTuple(args, "I", &new_interval))
-        return NULL;
+        return nullptr;
 
     interval = new_interval;
 
@@ -65,7 +65,7 @@ static PyObject* set_cpu(PyObject* Py_UNUSED(m), PyObject* args)
 {
     int new_cpu;
     if (!PyArg_ParseTuple(args, "p", &new_cpu))
-        return NULL;
+        return nullptr;
 
     _set_cpu(new_cpu);
 
@@ -77,7 +77,7 @@ static PyObject* set_memory(PyObject* Py_UNUSED(m), PyObject* args)
 {
     int new_memory;
     if (!PyArg_ParseTuple(args, "p", &new_memory))
-        return NULL;
+        return nullptr;
 
     memory = new_memory;
 
@@ -90,14 +90,14 @@ static PyObject* set_native(PyObject* Py_UNUSED(m), PyObject* args)
 #ifndef UNWIND_NATIVE_DISABLE
     int new_native;
     if (!PyArg_ParseTuple(args, "p", &new_native))
-        return NULL;
+        return nullptr;
 
     native = new_native;
 #else
     PyErr_SetString(PyExc_RuntimeError,
                     "Native profiling is disabled, please re-build/install echion without "
                     "UNWIND_NATIVE_DISABLE env var/preprocessor flag");
-    return NULL;
+    return nullptr;
 #endif  // UNWIND_NATIVE_DISABLE
     Py_RETURN_NONE;
 }
@@ -107,7 +107,7 @@ static PyObject* set_where(PyObject* Py_UNUSED(m), PyObject* args)
 {
     int value;
     if (!PyArg_ParseTuple(args, "p", &value))
-        return NULL;
+        return nullptr;
 
     where = value;
 
@@ -119,7 +119,7 @@ static PyObject* set_pipe_name(PyObject* Py_UNUSED(m), PyObject* args)
 {
     const char* name;
     if (!PyArg_ParseTuple(args, "s", &name))
-        return NULL;
+        return nullptr;
 
     pipe_name = name;
 
@@ -131,7 +131,7 @@ static PyObject* set_max_frames(PyObject* Py_UNUSED(m), PyObject* args)
 {
     unsigned int new_max_frames;
     if (!PyArg_ParseTuple(args, "I", &new_max_frames))
-        return NULL;
+        return nullptr;
 
     max_frames = new_max_frames;
 

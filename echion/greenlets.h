@@ -24,7 +24,7 @@ public:
 
     ID greenlet_id = 0;
     StringTable::Key name;
-    PyObject* frame = NULL;
+    PyObject* frame = nullptr;
 
     GreenletInfo(ID id, PyObject* frame, StringTable::Key name)
         : greenlet_id(id), frame(frame), name(name)
@@ -38,7 +38,7 @@ public:
 
 int GreenletInfo::unwind(PyObject* frame, PyThreadState* tstate, FrameStack& stack)
 {
-    PyObject* frame_addr = NULL;
+    PyObject* frame_addr = nullptr;
 #if PY_VERSION_HEX >= 0x030d0000
     frame_addr =
         frame == Py_None
