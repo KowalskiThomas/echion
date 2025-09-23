@@ -49,7 +49,7 @@ public:
 
     bool is_running = false;
 
-    static Result<GenInfo> create(PyObject* gen_addr);
+    [[nodiscard("error results should be checked")]] static Result<GenInfo> create(PyObject* gen_addr);
 
     GenInfo(GenInfo&& other) noexcept = default;
     GenInfo& operator=(GenInfo&& other) noexcept = default;
@@ -60,7 +60,7 @@ private:
     GenInfo& operator=(const GenInfo&) = delete;
 };
 
-Result<GenInfo> GenInfo::create(PyObject* gen_addr)
+[[nodiscard("error results should be checked")]] Result<GenInfo> GenInfo::create(PyObject* gen_addr)
 {
     GenInfo gen_info;
     PyGenObject gen;
@@ -145,7 +145,7 @@ inline std::unordered_map<PyObject*, PyObject*> task_link_map;
 inline std::mutex task_link_map_lock;
 
 // ----------------------------------------------------------------------------
-Result<TaskInfo> TaskInfo::create(TaskObj* task_addr)
+[[nodiscard("error results should be checked")]] Result<TaskInfo> TaskInfo::create(TaskObj* task_addr)
 {
     TaskInfo task_info;
     TaskObj task;
@@ -185,7 +185,7 @@ Result<TaskInfo> TaskInfo::create(TaskObj* task_addr)
 }
 
 // ----------------------------------------------------------------------------
-Result<TaskInfo> TaskInfo::current(PyObject* loop)
+[[nodiscard("error results should be checked")]] Result<TaskInfo> TaskInfo::current(PyObject* loop)
 {
     if (loop == NULL)
         return Result<TaskInfo>::error(ErrorKind::TaskInfoError);

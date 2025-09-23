@@ -79,13 +79,10 @@ Frame::Frame(PyObject* frame)
 // ------------------------------------------------------------------------
 Result<Frame> Frame::create(PyCodeObject* code, int lasti)
 {
-    Frame frame(StringTable::INVALID);
-    
     auto filename_result = string_table.key(code->co_filename);
     if (!filename_result)
         return Result<Frame>::error(filename_result.error_value);
-    frame.filename = *filename_result;
-
+    
 #if PY_VERSION_HEX >= 0x030b0000
     auto name_result = string_table.key(code->co_qualname);
 #else
@@ -93,8 +90,9 @@ Result<Frame> Frame::create(PyCodeObject* code, int lasti)
 #endif
     if (!name_result)
         return Result<Frame>::error(name_result.error_value);
-    frame.name = *name_result;
 
+    auto frame = Frame(*filename_result, *name_result);
+    
     auto location_result = frame.infer_location(code, lasti);
     if (!location_result)
         return Result<Frame>::error(ErrorKind::FrameError);
@@ -106,15 +104,13 @@ Result<Frame> Frame::create(PyCodeObject* code, int lasti)
 #ifndef UNWIND_NATIVE_DISABLE
 Result<Frame> Frame::create(unw_cursor_t& cursor, unw_word_t pc)
 {
-    Frame frame(StringTable::INVALID);
-    
-    frame.filename = string_table.key(pc);
+    auto maybe_name = string_table.key(cursor);
+    if (!maybe_name)
+        return Result<Frame>::error(maybe_name.error_value);
 
-    auto name_result = string_table.key(cursor);
-    if (!name_result)
-        return Result<Frame>::error(name_result.error_value);
-    frame.name = *name_result;
-    
+    auto filename = string_table.key(pc);
+
+    Frame frame(filename, *maybe_name);    
     return Result<Frame>::ok(frame);
 }
 #endif  // UNWIND_NATIVE_DISABLE
@@ -425,27 +421,27 @@ Result<Frame*> Frame::get(PyCodeObject* code_addr, int lasti)
 }
 
 // ----------------------------------------------------------------------------
-Result<Frame*> Frame::get(PyObject* frame)
+Frame& Frame::get(PyObject* frame)
 {
     auto frame_key = Frame::key(frame);
 
     auto lookup_result = frame_cache->lookup(frame_key);
     if (lookup_result)
     {
-        return lookup_result;
+        return **lookup_result;
     }
     else
     {
         auto new_frame = std::make_unique<Frame>(frame);
         new_frame->cache_key = frame_key;
-        Frame* frame_ptr = new_frame.get();
+        auto&f = *new_frame;
         
         Renderer::get().frame(frame_key, new_frame->filename, new_frame->name,
                               new_frame->location.line, new_frame->location.line_end,
                               new_frame->location.column, new_frame->location.column_end);
         
         frame_cache->store(frame_key, std::move(new_frame));
-        return frame_ptr;
+        return f;
     }
 }
 
@@ -472,14 +468,12 @@ Result<Frame*> Frame::get(unw_cursor_t& cursor)
         {
             auto frame = std::make_unique<Frame>(*frame_result);
             frame->cache_key = frame_key;
-            Frame* frame_ptr = frame.get();
-            
             Renderer::get().frame(frame_key, frame->filename, frame->name, frame->location.line,
                                   frame->location.line_end, frame->location.column,
                                   frame->location.column_end);
             
             frame_cache->store(frame_key, std::move(frame));
-            return frame_ptr;
+            return frame.get();
         }
         
         return &UNKNOWN_FRAME;

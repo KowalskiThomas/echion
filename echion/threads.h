@@ -51,14 +51,14 @@ public:
 
     uintptr_t asyncio_loop = 0;
 
-    Result<void> update_cpu_time();
+    [[nodiscard("error results should be checked")]] Result<void> update_cpu_time();
     bool is_running();
 
     void sample(int64_t, PyThreadState*, microsecond_t);
-    Result<void> unwind(PyThreadState*);
+    [[nodiscard("error results should be checked")]] Result<void> unwind(PyThreadState*);
 
     // ------------------------------------------------------------------------
-    static Result<std::unique_ptr<ThreadInfo>> create(uintptr_t thread_id, unsigned long native_id, const char* name)
+    [[nodiscard("error results should be checked")]] static Result<std::unique_ptr<ThreadInfo>> create(uintptr_t thread_id, unsigned long native_id, const char* name)
     {
 #if defined PL_LINUX
         clockid_t cpu_clock_id;
@@ -94,7 +94,7 @@ private:
     void unwind_greenlets(PyThreadState*, unsigned long);
 };
 
-Result<void> ThreadInfo::update_cpu_time()
+[[nodiscard("error results should be checked")]] Result<void> ThreadInfo::update_cpu_time()
 {
 #if defined PL_LINUX
     struct timespec ts;
@@ -159,7 +159,7 @@ inline std::unordered_map<uintptr_t, ThreadInfo::Ptr>& thread_info_map =
 inline std::mutex thread_info_map_lock;
 
 // ----------------------------------------------------------------------------
-Result<void> ThreadInfo::unwind(PyThreadState* tstate)
+[[nodiscard("error results should be checked")]] Result<void> ThreadInfo::unwind(PyThreadState* tstate)
 {
     if (native)
     {
@@ -401,7 +401,10 @@ void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
     if (cpu)
     {
         microsecond_t previous_cpu_time = cpu_time;
-        update_cpu_time();
+        auto update_cpu_time_result = update_cpu_time();
+        if (!update_cpu_time_result) {
+            return;  // Skip this sample if update_cpu_time fails
+        }
 
         bool running = is_running();
         if (!running && ignore_non_running_threads)

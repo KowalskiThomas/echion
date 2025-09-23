@@ -336,12 +336,11 @@ static PyObject* track_thread(PyObject* Py_UNUSED(m), PyObject* args)
             return nullptr;
         }
         
-        auto thread_info = std::move(*maybe_thread_info);
         if (entry != thread_info_map.end())
             // Thread is already tracked so we update its info
-            entry->second = std::move(thread_info);
+            entry->second = std::move(*maybe_thread_info);
         else
-            thread_info_map.emplace(thread_id, std::move(thread_info));
+            thread_info_map.emplace(thread_id, std::move(*maybe_thread_info));
     }
 
     Py_RETURN_NONE;

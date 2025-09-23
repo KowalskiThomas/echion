@@ -2,7 +2,7 @@
 #include <echion/render.h>
 
 // ------------------------------------------------------------------------
-Result<void> WhereRenderer::render_frame_internal(Frame& frame)
+[[nodiscard("error results should be checked")]] Result<void> WhereRenderer::render_frame_internal(Frame& frame)
 {
     auto name_result = string_table.lookup(frame.name);
     if (!name_result)
@@ -35,7 +35,8 @@ Result<void> WhereRenderer::render_frame_internal(Frame& frame)
 
 void WhereRenderer::render_frame(Frame& frame)
 {
-    render_frame_internal(frame);
+    // result is intentionally ignored
+    (void)render_frame_internal(frame);
 }
 
 // ------------------------------------------------------------------------

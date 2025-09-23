@@ -136,7 +136,7 @@ static size_t unwind_frame(PyObject* frame_addr, FrameStack& stack)
 }
 
 // ----------------------------------------------------------------------------
-static Result<size_t> unwind_frame_unsafe(PyObject* frame, FrameStack& stack)
+static size_t unwind_frame_unsafe(PyObject* frame, FrameStack& stack)
 {
     std::unordered_set<PyObject*> seen_frames;  // Used to detect cycles in the stack
     int count = 0;
@@ -166,12 +166,7 @@ static Result<size_t> unwind_frame_unsafe(PyObject* frame, FrameStack& stack)
         count++;
 
         seen_frames.insert(current_frame);
-
-        auto frame_result = Frame::get(current_frame);
-        if (!frame_result)
-            return Result<size_t>::error(ErrorKind::FrameError);
-
-        stack.push_back(**frame_result);
+        stack.push_back(Frame::get(current_frame));
 
 #if PY_VERSION_HEX >= 0x030b0000
         current_frame = (PyObject*)((_PyInterpreterFrame*)current_frame)->previous;
@@ -179,12 +174,10 @@ static Result<size_t> unwind_frame_unsafe(PyObject* frame, FrameStack& stack)
         current_frame = (PyObject*)((PyFrameObject*)current_frame)->f_back;
 #endif
     }
-
-    return Result<size_t>(count);
 }
 
 // ----------------------------------------------------------------------------
-static Result<void> unwind_python_stack(PyThreadState* tstate, FrameStack& stack)
+[[nodiscard("error results should be checked")]] static Result<void> unwind_python_stack(PyThreadState* tstate, FrameStack& stack)
 {
     stack.clear();
 #if PY_VERSION_HEX >= 0x030b0000
@@ -217,7 +210,7 @@ static Result<void> unwind_python_stack(PyThreadState* tstate, FrameStack& stack
 }
 
 // ----------------------------------------------------------------------------
-static Result<void> unwind_python_stack_unsafe(PyThreadState* tstate, FrameStack& stack)
+static void unwind_python_stack_unsafe(PyThreadState* tstate, FrameStack& stack)
 {
     stack.clear();
 #if PY_VERSION_HEX >= 0x030b0000
@@ -239,20 +232,17 @@ static Result<void> unwind_python_stack_unsafe(PyThreadState* tstate, FrameStack
 #else  // Python < 3.11
     PyObject* frame_addr = (PyObject*)tstate->frame;
 #endif
-    auto unwind_result = unwind_frame_unsafe(frame_addr, stack);
-    if (!unwind_result)
-        return Result<void>::error(ErrorKind::FrameError);
-    return Result<void>::ok();
+    unwind_frame_unsafe(frame_addr, stack);
 }
 
 // ----------------------------------------------------------------------------
-static Result<void> unwind_python_stack(PyThreadState* tstate)
+[[nodiscard("error results should be checked")]] static Result<void> unwind_python_stack(PyThreadState* tstate)
 {
     return unwind_python_stack(tstate, python_stack);
 }
 
 // ----------------------------------------------------------------------------
-static Result<void> interleave_stacks(FrameStack& python_stack)
+[[nodiscard("error results should be checked")]] static Result<void> interleave_stacks(FrameStack& python_stack)
 {
     interleaved_stack.clear();
 
@@ -310,7 +300,7 @@ static Result<void> interleave_stacks(FrameStack& python_stack)
 }
 
 // ----------------------------------------------------------------------------
-static Result<void> interleave_stacks()
+[[nodiscard("error results should be checked")]] static Result<void> interleave_stacks()
 {
     return interleave_stacks(python_stack);
 }

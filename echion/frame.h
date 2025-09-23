@@ -71,28 +71,30 @@ public:
 #endif
 
     // ------------------------------------------------------------------------
+    Frame(StringTable::Key filename, StringTable::Key name) : filename(filename), name(name) {};
     Frame(StringTable::Key name) : name(name) {};
     Frame(PyObject* frame);
-    static Result<Frame> create(PyCodeObject* code, int lasti);
+
+    [[nodiscard("error results should be checked")]] static Result<Frame> create(PyCodeObject* code, int lasti);
 #ifndef UNWIND_NATIVE_DISABLE
-    static Result<Frame> create(unw_cursor_t& cursor, unw_word_t pc);
+    [[nodiscard("error results should be checked")]] static Result<Frame> create(unw_cursor_t& cursor, unw_word_t pc);
 #endif  // UNWIND_NATIVE_DISABLE
 
 #if PY_VERSION_HEX >= 0x030b0000
-    static Result<Frame*> read(_PyInterpreterFrame* frame_addr, _PyInterpreterFrame** prev_addr);
+    [[nodiscard("error results should be checked")]] static Result<Frame*> read(_PyInterpreterFrame* frame_addr, _PyInterpreterFrame** prev_addr);
 #else
-    static Result<Frame*> read(PyObject* frame_addr, PyObject** prev_addr);
+    [[nodiscard("error results should be checked")]] static Result<Frame*> read(PyObject* frame_addr, PyObject** prev_addr);
 #endif
 
-    static Result<Frame*> get(PyCodeObject* code_addr, int lasti);
-    static Result<Frame*> get(PyObject* frame);
+    [[nodiscard("error results should be checked")]] static Result<Frame*> get(PyCodeObject* code_addr, int lasti);
+    [[nodiscard("error results should be checked")]] static Frame& get(PyObject* frame);
 #ifndef UNWIND_NATIVE_DISABLE
-    static Result<Frame*> get(unw_cursor_t& cursor);
+    [[nodiscard("error results should be checked")]] static Result<Frame*> get(unw_cursor_t& cursor);
 #endif  // UNWIND_NATIVE_DISABLE
     static Frame* get(StringTable::Key name);
 
 private:
-    Result<void> inline infer_location(PyCodeObject* code, int lasti);
+    [[nodiscard("error results should be checked")]] Result<void> inline infer_location(PyCodeObject* code, int lasti);
     static inline Key key(PyCodeObject* code, int lasti);
     static inline Key key(PyObject* frame);
 };

@@ -57,7 +57,7 @@ typedef PyObject* PyDictValues;
 class MirrorObject
 {
 public:
-    inline Result<PyObject*> reflect()
+    [[nodiscard("error results should be checked")]] inline Result<PyObject*> reflect()
     {
         if (reflected == NULL)
             return Result<PyObject*>::error(ErrorKind::MirrorError);
@@ -73,9 +73,9 @@ protected:
 class MirrorDict : public MirrorObject
 {
 public:
-    static Result<MirrorDict> create(PyObject* dict_addr);
+    [[nodiscard("error results should be checked")]] static Result<MirrorDict> create(PyObject* dict_addr);
 
-    Result<PyObject*> get_item(PyObject* key)
+    [[nodiscard("error results should be checked")]] Result<PyObject*> get_item(PyObject* key)
     {
         auto reflect_result = reflect();
         if (!reflect_result)
@@ -94,7 +94,7 @@ private:
     PyDictObject dict;
 };
 
-Result<MirrorDict> MirrorDict::create(PyObject* dict_addr)
+[[nodiscard("error results should be checked")]] Result<MirrorDict> MirrorDict::create(PyObject* dict_addr)
 {
     MirrorDict mirror;
     
@@ -149,8 +149,8 @@ Result<MirrorDict> MirrorDict::create(PyObject* dict_addr)
 class MirrorSet : public MirrorObject
 {
 public:
-    static Result<MirrorSet> create(PyObject* set_addr);
-    Result<std::unordered_set<PyObject*>> as_unordered_set();
+    [[nodiscard("error results should be checked")]] static Result<MirrorSet> create(PyObject* set_addr);
+    [[nodiscard("error results should be checked")]] Result<std::unordered_set<PyObject*>> as_unordered_set();
 
     MirrorSet(MirrorSet&& other) noexcept = default;
     MirrorSet& operator=(MirrorSet&& other) noexcept = default;
@@ -163,7 +163,7 @@ private:
     PySetObject set;
 };
 
-Result<MirrorSet> MirrorSet::create(PyObject* set_addr)
+[[nodiscard("error results should be checked")]] Result<MirrorSet> MirrorSet::create(PyObject* set_addr)
 {
     MirrorSet mirror;
     
@@ -185,7 +185,7 @@ Result<MirrorSet> MirrorSet::create(PyObject* set_addr)
     return Result<MirrorSet>(std::move(mirror));
 }
 
-Result<std::unordered_set<PyObject*>> MirrorSet::as_unordered_set()
+[[nodiscard("error results should be checked")]] Result<std::unordered_set<PyObject*>> MirrorSet::as_unordered_set()
 {
     if (data == nullptr)
         return Result<std::unordered_set<PyObject*>>::error(ErrorKind::MirrorError);

@@ -7,7 +7,7 @@
 #include <array>
 #include <cstdlib>
 #include <iostream>
-#include <stdexcept>
+#include <cstring>
 #include <string>
 
 #if defined PL_LINUX
