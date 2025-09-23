@@ -133,7 +133,7 @@ public:
 
         if (stack_entry == map.end())
         {
-            if (tstate == NULL)
+            if (tstate == nullptr)
                 // Invalid thread state, nothing we can do.
                 return;
 
@@ -244,7 +244,7 @@ static void* echion_malloc(void* ctx, size_t n)
     auto address = alloc->malloc(alloc->ctx, n);
 
     // Handle the allocation event
-    if (address != NULL)
+    if (address != nullptr)
         general_alloc(address, n);
 
     return address;
@@ -259,7 +259,7 @@ static void* echion_calloc(void* ctx, size_t nelem, size_t elsize)
     auto address = alloc->calloc(alloc->ctx, nelem, elsize);
 
     // Handle the allocation event
-    if (address != NULL)
+    if (address != nullptr)
         general_alloc(address, nelem * elsize);
 
     return address;
@@ -271,12 +271,12 @@ static void* echion_realloc(void* ctx, void* p, size_t n)
     auto* alloc = (PyMemAllocatorEx*)ctx;
 
     // Model this as a deallocation followed by an allocation
-    if (p != NULL)
+    if (p != nullptr)
         general_free(p);
 
     auto address = alloc->realloc(alloc->ctx, p, n);
 
-    if (address != NULL)
+    if (address != nullptr)
         general_alloc(address, n);
 
     return address;
@@ -288,7 +288,7 @@ static void echion_free(void* ctx, void* p)
     auto* alloc = (PyMemAllocatorEx*)ctx;
 
     // Handle the deallocation event
-    if (p != NULL)
+    if (p != nullptr)
         general_free(p);
 
     alloc->free(alloc->ctx, p);
@@ -301,7 +301,7 @@ static void echion_free(void* ctx, void* p)
 #define ALLOC_DOMAIN_COUNT 3
 
 inline PyMemAllocatorEx original_allocators[ALLOC_DOMAIN_COUNT];
-inline PyMemAllocatorEx echion_allocator = {NULL, echion_malloc, echion_calloc, echion_realloc,
+inline PyMemAllocatorEx echion_allocator = {nullptr, echion_malloc, echion_calloc, echion_realloc,
                                             echion_free};
 
 // ----------------------------------------------------------------------------

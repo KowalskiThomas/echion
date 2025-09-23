@@ -68,14 +68,14 @@ class MirrorObject
 public:
     inline PyObject* reflect()
     {
-        if (reflected == NULL)
+        if (reflected == nullptr)
             throw MirrorError();
         return reflected;
     }
 
 protected:
     std::unique_ptr<char[]> data = nullptr;
-    PyObject* reflected = NULL;
+    PyObject* reflected = nullptr;
 };
 
 // ----------------------------------------------------------------------------
@@ -113,7 +113,7 @@ MirrorDict::MirrorDict(PyObject* dict_addr)
     size_t keys_size = sizeof(PyDictKeysObject) + (keys.dk_size * sizeof(Py_ssize_t)) +
                        (keys.dk_nentries * entry_size);
 #endif
-    size_t values_size = dict.ma_values != NULL ? keys.dk_nentries * sizeof(PyObject*) : 0;
+    size_t values_size = dict.ma_values != nullptr ? keys.dk_nentries * sizeof(PyObject*) : 0;
 
     // Allocate the buffer
     ssize_t data_size = keys_size + (keys.dk_nentries * entry_size) + values_size;
@@ -128,7 +128,7 @@ MirrorDict::MirrorDict(PyObject* dict_addr)
 
     dict.ma_keys = (PyDictKeysObject*)data.get();
 
-    if (dict.ma_values != NULL)
+    if (dict.ma_values != nullptr)
     {
         // Copy the value data and update the pointer
         char* values_addr = data.get() + keys_size;
@@ -182,7 +182,7 @@ std::unordered_set<PyObject*> MirrorSet::as_unordered_set()
     for (size_t i = 0; i < size; i++)
     {
         auto entry = set.table[i];
-        if (entry.key != NULL)
+        if (entry.key != nullptr)
             uset.insert(entry.key);
     }
 

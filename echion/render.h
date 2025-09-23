@@ -98,6 +98,22 @@ public:
     bool set_output(std::ostream& new_output)
     {
         file_stream.close();
+        
+        if (output) {
+            delete output;
+        }
+
+        output = &new_output;
+        return true;
+    }
+
+    bool set_output(std::ostream&& new_output)
+    {
+        file_stream.close();
+        if (output) {
+            delete output;
+        }
+        
         output = &new_output;
         return true;
     }

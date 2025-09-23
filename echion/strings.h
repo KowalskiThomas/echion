@@ -21,7 +21,10 @@
 
 #include <echion/long.h>
 #include <echion/render.h>
+
 #include <echion/vm.h>
+
+typedef pid_t proc_ref_t;
 
 class StringError : public std::exception
 {
@@ -65,7 +68,7 @@ static std::string pyunicode_to_utf8(PyObject* str_addr)
 
     const char* data = ascii.state.compact ? (const char*)(((uint8_t*)str_addr) + sizeof(ascii))
                                            : (const char*)str._base.utf8;
-    if (data == NULL)
+    if (data == nullptr)
         throw StringError();
 
     Py_ssize_t size = ascii.state.compact ? ascii.length : str._base.utf8_length;
@@ -204,11 +207,11 @@ public:
             char* name = sym;
 
             // Try to demangle C++ names
-            char* demangled = NULL;
+            char* demangled = nullptr;
             if (name[0] == '_' && name[1] == 'Z')
             {
                 int status;
-                demangled = abi::__cxa_demangle(name, NULL, NULL, &status);
+                demangled = abi::__cxa_demangle(name, nullptr, nullptr, &status);
                 if (status == 0)
                     name = demangled;
             }

@@ -173,16 +173,16 @@ typedef struct
 #if PY_VERSION_HEX >= 0x030b0000
 PyObject* PyGen_yf(PyGenObject* gen, PyObject* frame_addr)
 {
-    PyObject* yf = NULL;
+    PyObject* yf = nullptr;
 
     if (gen->gi_frame_state < FRAME_CLEARED)
     {
         if (gen->gi_frame_state == FRAME_CREATED)
-            return NULL;
+            return nullptr;
 
         _PyInterpreterFrame frame;
         if (copy_type(frame_addr, frame))
-            return NULL;
+            return nullptr;
 
         _Py_CODEUNIT next;
 #if PY_VERSION_HEX >= 0x030d0000
@@ -190,17 +190,17 @@ PyObject* PyGen_yf(PyGenObject* gen, PyObject* frame_addr)
 #else
         if (copy_type(frame.prev_instr + 1, next))
 #endif
-            return NULL;
+            return nullptr;
         if (!(_Py_OPCODE(next) == RESUME || _Py_OPCODE(next) == RESUME_QUICK) ||
             _Py_OPARG(next) < 2)
-            return NULL;
+            return nullptr;
 
         if (frame.stacktop < 1 || frame.stacktop > (1 << 20))
-            return NULL;
+            return nullptr;
 
         auto localsplus = std::make_unique<PyObject*[]>(frame.stacktop);
         if (copy_generic(frame.localsplus, localsplus.get(), frame.stacktop * sizeof(PyObject*)))
-            return NULL;
+            return nullptr;
 
         yf = localsplus[frame.stacktop - 1];
     }
@@ -211,38 +211,38 @@ PyObject* PyGen_yf(PyGenObject* gen, PyObject* frame_addr)
 #elif PY_VERSION_HEX >= 0x030a0000
 PyObject* PyGen_yf(PyGenObject* Py_UNUSED(gen), PyObject* frame_addr)
 {
-    PyObject* yf = NULL;
+    PyObject* yf = nullptr;
     PyFrameObject* f = (PyFrameObject*)frame_addr;
 
     if (f)
     {
         PyFrameObject frame;
         if (copy_type(f, frame))
-            return NULL;
+            return nullptr;
 
         if (frame.f_lasti < 0)
-            return NULL;
+            return nullptr;
 
         PyCodeObject code;
         if (copy_type(frame.f_code, code))
-            return NULL;
+            return nullptr;
 
         Py_ssize_t s = 0;
         auto c = pybytes_to_bytes_and_size(code.co_code, &s);
         if (c == nullptr)
-            return NULL;
+            return nullptr;
 
         if (c[(frame.f_lasti + 1) * sizeof(_Py_CODEUNIT)] != YIELD_FROM)
-            return NULL;
+            return nullptr;
 
         ssize_t nvalues = frame.f_stackdepth;
         if (nvalues < 1 || nvalues > (1 << 20))
-            return NULL;
+            return nullptr;
 
         auto stack = std::make_unique<PyObject*[]>(nvalues);
 
         if (copy_generic(frame.f_valuestack, stack.get(), nvalues * sizeof(PyObject*)))
-            return NULL;
+            return nullptr;
 
         yf = stack[nvalues - 1];
     }
@@ -253,36 +253,36 @@ PyObject* PyGen_yf(PyGenObject* Py_UNUSED(gen), PyObject* frame_addr)
 #else
 PyObject* PyGen_yf(PyGenObject* Py_UNUSED(gen), PyObject* frame_addr)
 {
-    PyObject* yf = NULL;
+    PyObject* yf = nullptr;
     PyFrameObject* f = (PyFrameObject*)frame_addr;
 
-    if (frame_addr == NULL)
-        return NULL;
+    if (frame_addr == nullptr)
+        return nullptr;
 
     PyFrameObject frame;
     if (copy_type(f, frame))
-        return NULL;
+        return nullptr;
 
     if (frame.f_stacktop)
     {
         if (frame.f_lasti < 0)
-            return NULL;
+            return nullptr;
 
         PyCodeObject code;
         if (copy_type(frame.f_code, code))
-            return NULL;
+            return nullptr;
 
         Py_ssize_t s = 0;
         auto c = pybytes_to_bytes_and_size(code.co_code, &s);
         if (c == nullptr)
-            return NULL;
+            return nullptr;
 
         if (c[f->f_lasti + sizeof(_Py_CODEUNIT)] != YIELD_FROM)
-            return NULL;
+            return nullptr;
 
         auto stacktop = std::make_unique<PyObject*>();
         if (copy_generic(frame.f_stacktop - 1, stacktop.get(), sizeof(PyObject*)))
-            return NULL;
+            return nullptr;
 
         yf = *stacktop;
     }

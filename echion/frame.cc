@@ -31,14 +31,16 @@ static inline int _read_signed_varint(unsigned char* table, ssize_t size, ssize_
 // ----------------------------------------------------------------------------
 void init_frame_cache(size_t capacity)
 {
-    frame_cache = new LRUCache<uintptr_t, Frame>(capacity);
+    frame_cache = new LRUCache<uintptr_t, Frame>(capacity); // NOLINT(cppcoreguidelines-owning-memory)
 }
 
 // ----------------------------------------------------------------------------
 void reset_frame_cache()
 {
-    delete frame_cache;
-    frame_cache = nullptr;
+    if (frame_cache) {
+        delete frame_cache; // NOLINT(cppcoreguidelines-owning-memory)
+        frame_cache = nullptr;
+    }
 }
 
 // ------------------------------------------------------------------------
@@ -123,7 +125,7 @@ void Frame::infer_location(PyCodeObject* code_obj, int lasti)
     if (table == nullptr)
         throw LocationError();
 
-    auto table_data = table.get();
+    auto* table_data = table.get();
 
     for (Py_ssize_t i = 0, bc = 0; i < len; i++)
     {
@@ -303,7 +305,7 @@ Frame& Frame::read(PyObject* frame_addr, PyObject** prev_addr)
         }
     }
 
-    if (frame_addr == NULL)
+    if (frame_addr == nullptr)
     {
         throw Frame::Error();
     }
@@ -350,7 +352,7 @@ Frame& Frame::read(PyObject* frame_addr, PyObject** prev_addr)
 #endif  // PY_VERSION_HEX >= 0x030c0000
     }
 
-    *prev_addr = &frame == &INVALID_FRAME ? NULL : frame_addr->previous;
+    *prev_addr = &frame == &INVALID_FRAME ? nullptr : frame_addr->previous;
 
 #else   // PY_VERSION_HEX < 0x030b0000
     // Unwind the stack from leaf to root and store it in a stack. This way we
@@ -362,7 +364,7 @@ Frame& Frame::read(PyObject* frame_addr, PyObject** prev_addr)
 
     auto& frame = Frame::get(py_frame.f_code, py_frame.f_lasti);
 
-    *prev_addr = (&frame == &INVALID_FRAME) ? NULL : reinterpret_cast<PyObject*>(py_frame.f_back);
+    *prev_addr = (&frame == &INVALID_FRAME) ? nullptr : reinterpret_cast<PyObject*>(py_frame.f_back);
 #endif  // PY_VERSION_HEX >= 0x030b0000
 
     return frame;
@@ -383,7 +385,9 @@ Frame& Frame::get(PyCodeObject* code_addr, int lasti)
         {
             PyCodeObject code;
             if (copy_type(code_addr, code))
+            {
                 return INVALID_FRAME;
+            }
 
             auto new_frame = std::make_unique<Frame>(&code, lasti);
             new_frame->cache_key = frame_key;
@@ -427,12 +431,13 @@ Frame& Frame::get(PyObject* frame)
 #ifndef UNWIND_NATIVE_DISABLE
 Frame& Frame::get(unw_cursor_t& cursor)
 {
-    unw_word_t pc;
+    unw_word_t pc = 0;
     unw_get_reg(&cursor, UNW_REG_IP, &pc);
-    if (pc == 0)
+    if (pc == 0){
         throw Error();
+    }
 
-    uintptr_t frame_key = (uintptr_t)pc;
+    auto frame_key = static_cast<uintptr_t>(pc);
     try
     {
         return frame_cache->lookup(frame_key);
@@ -461,7 +466,7 @@ Frame& Frame::get(unw_cursor_t& cursor)
 // ----------------------------------------------------------------------------
 Frame& Frame::get(StringTable::Key name)
 {
-    uintptr_t frame_key = static_cast<uintptr_t>(name);
+    auto frame_key = static_cast<uintptr_t>(name);
     try
     {
         return frame_cache->lookup(frame_key);

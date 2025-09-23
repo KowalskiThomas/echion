@@ -237,7 +237,7 @@ void ThreadInfo::unwind_tasks()
     {
         origin_map.emplace(task->origin, std::ref(*task));
 
-        if (task->waiter != NULL)
+        if (task->waiter != nullptr)
             waitee_map.emplace(task->waiter->origin, std::ref(*task));
         else if (parent_tasks.find(task->origin) == parent_tasks.end())
         {
@@ -517,9 +517,9 @@ static void for_each_thread(InterpreterInfo& interp,
             continue;
 
         // Enqueue the unseen threads that we can reach from this thread.
-        if (tstate.next != NULL && seen_threads.find(tstate.next) == seen_threads.end())
+        if (tstate.next != nullptr && seen_threads.find(tstate.next) == seen_threads.end())
             threads.insert(tstate.next);
-        if (tstate.prev != NULL && seen_threads.find(tstate.prev) == seen_threads.end())
+        if (tstate.prev != nullptr && seen_threads.find(tstate.prev) == seen_threads.end())
             threads.insert(tstate.prev);
 
         {

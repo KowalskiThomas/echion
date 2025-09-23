@@ -2,6 +2,7 @@
 //
 // Copyright (c) 2023 Gabriele N. Tornetta <phoenix1987@gmail.com>.
 
+#include "echion/render.h"
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #if PY_VERSION_HEX >= 0x030c0000
@@ -18,7 +19,7 @@
 
 #include <fcntl.h>
 #include <sched.h>
-#include <signal.h>
+#include <csignal>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -36,11 +37,25 @@
 #include <echion/state.h>
 #include <echion/threads.h>
 #include <echion/timing.h>
+#include <echion/vm.h>
 
 // ----------------------------------------------------------------------------
+static void do_where();
+
+static void do_where(std::ostream&& stream)
+{
+    WhereRenderer::get().set_output(std::move(stream));
+    do_where();
+}
+
 static void do_where(std::ostream& stream)
 {
     WhereRenderer::get().set_output(stream);
+    do_where();
+}
+
+static void do_where()
+{
     WhereRenderer::get().render_message("\r🐴 Echion reporting for duty");
     WhereRenderer::get().render_message("");
 
@@ -56,7 +71,9 @@ static void do_where(std::ostream& stream)
                 interleaved_stack.render_where();
             }
             else
+            {
                 python_stack.render_where();
+            }
             WhereRenderer::get().render_message("");
         });
     });
@@ -71,7 +88,9 @@ static void where_listener()
         where_cv.wait(lock);
 
         if (!running)
+        {
             break;
+        }
 
         do_where(std::cerr);
     }
@@ -80,7 +99,7 @@ static void where_listener()
 // ----------------------------------------------------------------------------
 static void setup_where()
 {
-    where_thread = new std::thread(where_listener);
+    where_thread = std::make_unique<std::thread>(where_listener);
 }
 
 static void teardown_where()
@@ -94,8 +113,7 @@ static void teardown_where()
         }
 
         where_thread->join();
-
-        where_thread = nullptr;
+        where_thread.reset();
     }
 }
 
@@ -125,7 +143,7 @@ static inline void _start()
         std::ofstream pipe(pipe_name, std::ios::out);
 
         if (pipe)
-            do_where(pipe);
+            do_where(std::move(pipe));
 
         else
             std::cerr << "Failed to open pipe " << pipe_name << std::endl;
@@ -303,7 +321,7 @@ static PyObject* track_thread(PyObject* Py_UNUSED(m), PyObject* args)
     pid_t native_id;
 
     if (!PyArg_ParseTuple(args, "lsi", &thread_id, &thread_name, &native_id))
-        return NULL;
+        return nullptr;
 
     {
         const std::lock_guard<std::mutex> guard(thread_info_map_lock);
@@ -325,7 +343,7 @@ static PyObject* untrack_thread(PyObject* Py_UNUSED(m), PyObject* args)
 {
     unsigned long thread_id;
     if (!PyArg_ParseTuple(args, "l", &thread_id))
-        return NULL;
+        return nullptr;
 
     {
         const std::lock_guard<std::mutex> guard(thread_info_map_lock);
@@ -351,7 +369,7 @@ static PyObject* track_asyncio_loop(PyObject* Py_UNUSED(m), PyObject* args)
     PyObject* loop;
 
     if (!PyArg_ParseTuple(args, "lO", &thread_id, &loop))
-        return NULL;
+        return nullptr;
 
     {
         std::lock_guard<std::mutex> guard(thread_info_map_lock);
@@ -371,10 +389,10 @@ static PyObject* init_asyncio(PyObject* Py_UNUSED(m), PyObject* args)
 {
     if (!PyArg_ParseTuple(args, "OOO", &asyncio_current_tasks, &asyncio_scheduled_tasks,
                           &asyncio_eager_tasks))
-        return NULL;
+        return nullptr;
 
     if (asyncio_eager_tasks == Py_None)
-        asyncio_eager_tasks = NULL;
+        asyncio_eager_tasks = nullptr;
 
     Py_RETURN_NONE;
 }
@@ -387,7 +405,7 @@ static PyObject* track_greenlet(PyObject* Py_UNUSED(m), PyObject* args)
     PyObject* frame;
 
     if (!PyArg_ParseTuple(args, "lOO", &greenlet_id, &name, &frame))
-        return NULL;
+        return nullptr;
 
     StringTable::Key greenlet_name;
 
@@ -399,7 +417,7 @@ static PyObject* track_greenlet(PyObject* Py_UNUSED(m), PyObject* args)
     {
         // We failed to get this task but we keep going
         PyErr_SetString(PyExc_RuntimeError, "Failed to get greenlet name from the string table");
-        return NULL;
+        return nullptr;
     }
     {
         const std::lock_guard<std::mutex> guard(greenlet_info_map_lock);
@@ -427,7 +445,7 @@ static PyObject* untrack_greenlet(PyObject* Py_UNUSED(m), PyObject* args)
 {
     uintptr_t greenlet_id;
     if (!PyArg_ParseTuple(args, "l", &greenlet_id))
-        return NULL;
+        return nullptr;
 
     {
         const std::lock_guard<std::mutex> guard(greenlet_info_map_lock);
@@ -445,7 +463,7 @@ static PyObject* link_greenlets(PyObject* Py_UNUSED(m), PyObject* args)
     uintptr_t parent, child;
 
     if (!PyArg_ParseTuple(args, "ll", &child, &parent))
-        return NULL;
+        return nullptr;
 
     {
         std::lock_guard<std::mutex> guard(greenlet_info_map_lock);
@@ -463,7 +481,7 @@ static PyObject* update_greenlet_frame(PyObject* Py_UNUSED(m), PyObject* args)
     PyObject* frame;
 
     if (!PyArg_ParseTuple(args, "lO", &greenlet_id, &frame))
-        return NULL;
+        return nullptr;
 
     {
         std::lock_guard<std::mutex> guard(greenlet_info_map_lock);
@@ -485,7 +503,7 @@ static PyObject* link_tasks(PyObject* Py_UNUSED(m), PyObject* args)
     PyObject *parent, *child;
 
     if (!PyArg_ParseTuple(args, "OO", &parent, &child))
-        return NULL;
+        return nullptr;
 
     {
         std::lock_guard<std::mutex> guard(task_link_map_lock);
@@ -522,14 +540,14 @@ static PyMethodDef echion_core_methods[] = {
     {"set_native", set_native, METH_VARARGS, "Set whether to sample the native stacks"},
     {"set_where", set_where, METH_VARARGS, "Set whether to use where mode"},
     {"set_pipe_name", set_pipe_name, METH_VARARGS, "Set the pipe name"},
-    {NULL, NULL, 0, NULL} /* Sentinel */
+    {nullptr, nullptr, 0, nullptr} /* Sentinel */
 };
 
 // ----------------------------------------------------------------------------
 static struct PyModuleDef coremodule = {
     PyModuleDef_HEAD_INIT,
     "core", /* name of module */
-    NULL,   /* module documentation, may be NULL */
+    nullptr,   /* module documentation, may be nullptr */
     -1,     /* size of per-interpreter state of the module,
                or -1 if the module keeps state in global variables. */
     echion_core_methods,
@@ -541,8 +559,8 @@ PyMODINIT_FUNC PyInit_core(void)
     PyObject* m;
 
     m = PyModule_Create(&coremodule);
-    if (m == NULL)
-        return NULL;
+    if (m == nullptr)
+        return nullptr;
 
     // We make the assumption that this module is loaded by the main thread.
     // TODO: These need to be reset after a fork.
