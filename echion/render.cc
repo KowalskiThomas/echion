@@ -6,11 +6,11 @@ Result<void> WhereRenderer::render_frame_internal(Frame& frame)
 {
     auto name_result = string_table.lookup(frame.name);
     if (!name_result)
-        return Result<void>::error();
+        return Result<void>::error(ErrorKind::LookupError);
 
     auto filename_result = string_table.lookup(frame.filename);
     if (!filename_result)
-        return Result<void>::error();
+        return Result<void>::error(ErrorKind::LookupError);
 
     auto line = frame.location.line;
 

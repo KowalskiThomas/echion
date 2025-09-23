@@ -169,7 +169,7 @@ static Result<size_t> unwind_frame_unsafe(PyObject* frame, FrameStack& stack)
 
         auto frame_result = Frame::get(current_frame);
         if (!frame_result)
-            return Result<size_t>::error();
+            return Result<size_t>::error(ErrorKind::FrameError);
 
         stack.push_back(**frame_result);
 
@@ -205,7 +205,7 @@ static Result<void> unwind_python_stack(PyThreadState* tstate, FrameStack& stack
     _PyCFrame cframe;
     _PyCFrame* cframe_addr = tstate->cframe;
     if (copy_type(cframe_addr, cframe))
-        return Result<void>::error();
+        return Result<void>::error(ErrorKind::FrameError);
 
     PyObject* frame_addr = (PyObject*)cframe.current_frame;
 #else  // Python < 3.11
@@ -241,7 +241,7 @@ static Result<void> unwind_python_stack_unsafe(PyThreadState* tstate, FrameStack
 #endif
     auto unwind_result = unwind_frame_unsafe(frame_addr, stack);
     if (!unwind_result)
-        return Result<void>::error();
+        return Result<void>::error(ErrorKind::FrameError);
     return Result<void>::ok();
 }
 
@@ -265,7 +265,7 @@ static Result<void> interleave_stacks(FrameStack& python_stack)
 
         auto name_lookup = string_table.lookup(native_frame.get().name);
         if (!name_lookup)
-            return Result<void>::error();
+            return Result<void>::error(ErrorKind::LookupError);
         if ((*name_lookup)->find("PyEval_EvalFrameDefault") != std::string::npos)
         {
             if (p == python_stack.rend())

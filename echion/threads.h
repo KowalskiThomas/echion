@@ -63,7 +63,7 @@ public:
 #if defined PL_LINUX
         clockid_t cpu_clock_id;
         if (pthread_getcpuclockid((pthread_t)thread_id, &cpu_clock_id))
-            return Result<std::unique_ptr<ThreadInfo>>::error();
+            return Result<std::unique_ptr<ThreadInfo>>::error(ErrorKind::ThreadInfoError);
 
 #elif defined PL_DARWIN
         // pthread_mach_thread_np does not return a status code; the behaviour is undefined
@@ -75,7 +75,7 @@ public:
 
         auto update_cpu_time_result = thread_info->update_cpu_time();
         if (!update_cpu_time_result)
-            return Result<std::unique_ptr<ThreadInfo>>::error();
+            return Result<std::unique_ptr<ThreadInfo>>::error(ErrorKind::ThreadInfoError);
 
         return Result<std::unique_ptr<ThreadInfo>>(std::move(thread_info));
     };
@@ -99,7 +99,7 @@ Result<void> ThreadInfo::update_cpu_time()
 #if defined PL_LINUX
     struct timespec ts;
     if (clock_gettime(cpu_clock_id, &ts))
-        return Result<void>::error();
+        return Result<void>::error(ErrorKind::ThreadInfoError);
 
     this->cpu_time = TS_TO_MICROSECOND(ts);
 #elif defined PL_DARWIN
@@ -109,7 +109,7 @@ Result<void> ThreadInfo::update_cpu_time()
         thread_info((thread_act_t)this->mach_port, THREAD_BASIC_INFO, (thread_info_t)&info, &count);
 
     if (kr != KERN_SUCCESS)
-        return Result<void>::error();
+        return Result<void>::error(ErrorKind::ThreadInfoError);
 
     if (info.flags & TH_FLAGS_IDLE)
         return;
@@ -183,7 +183,7 @@ Result<void> ThreadInfo::unwind(PyThreadState* tstate)
     {
         auto python_result = unwind_python_stack(tstate);
         if (!python_result)
-            return Result<void>::error();
+            return Result<void>::error(ErrorKind::UnwindError);
 
         if (asyncio_loop)
         {

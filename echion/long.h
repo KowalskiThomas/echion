@@ -30,10 +30,10 @@ static Result<long long> pylong_to_llong(PyObject* long_addr)
     long long ret = 0;
 
     if (copy_type(long_addr, long_obj))
-        return Result<long long>::error();
+        return Result<long long>::error(ErrorKind::PyLongError);
 
     if (!PyLong_CheckExact(&long_obj))
-        return Result<long long>::error();
+        return Result<long long>::error(ErrorKind::PyLongError);
 
     if (_PyLong_IsCompact(&long_obj))
     {
@@ -50,7 +50,7 @@ static Result<long long> pylong_to_llong(PyObject* long_addr)
         std::vector<digit> digits(i);
         if (copy_generic(long_obj.long_value.ob_digit, digits.data(), i * sizeof(digit)))
         {
-            throw LongError();
+            return Result<long long>::error(ErrorKind::PyLongError);
         }
         while (--i >= 0)
         {

@@ -66,7 +66,7 @@ Result<GenInfo> GenInfo::create(PyObject* gen_addr)
     PyGenObject gen;
 
     if (copy_type(gen_addr, gen) || !PyCoro_CheckExact(&gen))
-        return Result<GenInfo>::error();
+        return Result<GenInfo>::error(ErrorKind::GenInfoError);
 
     gen_info.origin = gen_addr;
 
@@ -81,7 +81,7 @@ Result<GenInfo> GenInfo::create(PyObject* gen_addr)
 
     PyFrameObject f;
     if (copy_type(gen_info.frame, f))
-        return Result<GenInfo>::error();
+        return Result<GenInfo>::error(ErrorKind::GenInfoError);
 
     PyObject* yf = (gen_info.frame != NULL ? PyGen_yf(&gen, gen_info.frame) : NULL);
     if (yf != NULL && yf != gen_addr)
@@ -151,11 +151,11 @@ Result<TaskInfo> TaskInfo::create(TaskObj* task_addr)
     TaskObj task;
     
     if (copy_type(task_addr, task))
-        return Result<TaskInfo>::error();
+        return Result<TaskInfo>::error(ErrorKind::TaskInfoError);
 
     auto coro_result = GenInfo::create(task.task_coro);
     if (!coro_result)
-        return Result<TaskInfo>::error();
+        return Result<TaskInfo>::error(ErrorKind::TaskInfoError);
         
     task_info.coro = std::make_unique<GenInfo>(std::move(*coro_result));
 
@@ -163,7 +163,7 @@ Result<TaskInfo> TaskInfo::create(TaskObj* task_addr)
 
     auto name_result = string_table.key(task.task_name);
     if (!name_result)
-        return Result<TaskInfo>::error();
+        return Result<TaskInfo>::error(ErrorKind::TaskInfoError);
     task_info.name = *name_result;
 
     task_info.loop = task.task_loop;
@@ -188,19 +188,19 @@ Result<TaskInfo> TaskInfo::create(TaskObj* task_addr)
 Result<TaskInfo> TaskInfo::current(PyObject* loop)
 {
     if (loop == NULL)
-        return Result<TaskInfo>::error();
+        return Result<TaskInfo>::error(ErrorKind::TaskInfoError);
 
     auto dict_result = MirrorDict::create(asyncio_current_tasks);
     if (!dict_result)
-        return Result<TaskInfo>::error();
+        return Result<TaskInfo>::error(ErrorKind::TaskInfoError);
     
     auto task_result = (*dict_result).get_item(loop);
     if (!task_result)
-        return Result<TaskInfo>::error();
+        return Result<TaskInfo>::error(ErrorKind::TaskInfoError);
         
     PyObject* task = *task_result;
     if (task == NULL)
-        return Result<TaskInfo>::error();
+        return Result<TaskInfo>::error(ErrorKind::TaskInfoError);
 
     return TaskInfo::create((TaskObj*)task);
 }

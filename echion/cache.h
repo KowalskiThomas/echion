@@ -30,9 +30,6 @@ private:
 template <typename K, typename V>
 void LRUCache<K, V>::store(const K& k, std::unique_ptr<V> v)
 {
-    if (!v)
-        return;
-
     // Check if cache is full
     if (items.size() >= capacity)
     {
@@ -45,8 +42,6 @@ void LRUCache<K, V>::store(const K& k, std::unique_ptr<V> v)
 
     // Insert in the map
     index[k] = items.begin();
-
-    return;
 }
 
 template <typename K, typename V>
@@ -54,10 +49,10 @@ Result<V*> LRUCache<K, V>::lookup(const K& k)
 {
     auto itr = index.find(k);
     if (itr == index.end())
-        return Result<V*>::error();
+        return Result<V*>::error(ErrorKind::LookupError);
 
     // Move to the front of the list
     items.splice(items.begin(), items, itr->second);
 
-    return Result<V*>(itr->second->second.get());
+    return Result<V*>::ok(itr->second->second.get());
 }

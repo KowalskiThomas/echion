@@ -83,7 +83,7 @@ Result<Frame> Frame::create(PyCodeObject* code, int lasti)
     
     auto filename_result = string_table.key(code->co_filename);
     if (!filename_result)
-        return Result<Frame>::error();
+        return Result<Frame>::error(filename_result.error_value);
     frame.filename = *filename_result;
 
 #if PY_VERSION_HEX >= 0x030b0000
@@ -92,12 +92,12 @@ Result<Frame> Frame::create(PyCodeObject* code, int lasti)
     auto name_result = string_table.key(code->co_name);
 #endif
     if (!name_result)
-        return Result<Frame>::error();
+        return Result<Frame>::error(name_result.error_value);
     frame.name = *name_result;
 
     auto location_result = frame.infer_location(code, lasti);
     if (!location_result)
-        return Result<Frame>::error();
+        return Result<Frame>::error(ErrorKind::FrameError);
 
     return Result<Frame>(frame);
 }
@@ -112,10 +112,10 @@ Result<Frame> Frame::create(unw_cursor_t& cursor, unw_word_t pc)
 
     auto name_result = string_table.key(cursor);
     if (!name_result)
-        return Result<Frame>::error();
+        return Result<Frame>::error(name_result.error_value);
     frame.name = *name_result;
     
-    return Result<Frame>(frame);
+    return Result<Frame>::ok(frame);
 }
 #endif  // UNWIND_NATIVE_DISABLE
 
@@ -128,7 +128,7 @@ Result<void> Frame::infer_location(PyCodeObject* code_obj, int lasti)
 #if PY_VERSION_HEX >= 0x030b0000
     auto table = pybytes_to_bytes_and_size(code_obj->co_linetable, &len);
     if (table == nullptr)
-        return Result<void>::error();
+        return Result<void>::error(ErrorKind::PyBytesError);
 
     auto table_data = table.get();
 
@@ -165,7 +165,7 @@ Result<void> Frame::infer_location(PyCodeObject* code_obj, int lasti)
             case 11:
             case 10:
                 if (i >= len - 2)
-                    return Result<void>::error();
+                    return Result<void>::error(ErrorKind::BytecodeError);
 
                 lineno += code - 10;
 
@@ -178,7 +178,7 @@ Result<void> Frame::infer_location(PyCodeObject* code_obj, int lasti)
 
             default:
                 if (i >= len - 1)
-                    return Result<void>::error();
+                    return Result<void>::error(ErrorKind::BytecodeError);
 
                 next_byte = table[++i];
 
@@ -195,7 +195,7 @@ Result<void> Frame::infer_location(PyCodeObject* code_obj, int lasti)
 #elif PY_VERSION_HEX >= 0x030a0000
     auto table = pybytes_to_bytes_and_size(code_obj->co_linetable, &len);
     if (table == nullptr)
-        return Result<void>::error();
+        return Result<void>::error(ErrorKind::PyBytesError);
 
     lasti <<= 1;
     for (int i = 0, bc = 0; i < len; i++)
@@ -298,13 +298,13 @@ Result<Frame*> Frame::read(PyObject* frame_addr, PyObject** prev_addr)
         {
             if (copy_type(frame_addr, iframe))
             {
-                return Result<Frame*>::error();
+                return Result<Frame*>::error(ErrorKind::FrameError);
             }
             frame_addr = &iframe;
         }
         if (copy_type(frame_addr->f_executable, f_executable))
         {
-            return Result<Frame*>::error();
+            return Result<Frame*>::error(ErrorKind::FrameError);
         }
         if (f_executable.ob_type == &PyCode_Type)
         {
@@ -314,7 +314,7 @@ Result<Frame*> Frame::read(PyObject* frame_addr, PyObject** prev_addr)
 
     if (frame_addr == NULL)
     {
-        return Result<Frame*>::error();
+        return Result<Frame*>::error(ErrorKind::FrameError);
     }
 #else   // PY_VERSION_HEX < 0x030d0000
     // Code Specific to Python < 3.13 and >= 3.11
@@ -329,7 +329,7 @@ Result<Frame*> Frame::read(PyObject* frame_addr, PyObject** prev_addr)
     {
         if (copy_type(frame_addr, iframe))
         {
-            return Result<Frame*>::error();
+            return Result<Frame*>::error(ErrorKind::FrameError);
         }
         frame_addr = &iframe;
     }
@@ -345,7 +345,7 @@ Result<Frame*> Frame::read(PyObject* frame_addr, PyObject** prev_addr)
         offsetof(PyCodeObject, co_code_adaptive) / sizeof(_Py_CODEUNIT);
     auto frame_result = Frame::get(reinterpret_cast<PyCodeObject*>(frame_addr->f_executable), lasti);
     if (!frame_result) {
-        return Result<Frame*>::error();
+        return Result<Frame*>::error(ErrorKind::FrameError);
     }
     Frame* frame = *frame_result;
 #else
@@ -354,7 +354,7 @@ Result<Frame*> Frame::read(PyObject* frame_addr, PyObject** prev_addr)
                       offsetof(PyCodeObject, co_code_adaptive) / sizeof(_Py_CODEUNIT);
     auto frame_result = Frame::get(frame_addr->f_code, lasti);
     if (!frame_result) {
-        return Result<Frame*>::error();
+        return Result<Frame*>::error(ErrorKind::FrameError);
     }
     Frame* frame = *frame_result;
 #endif  // PY_VERSION_HEX >= 0x030d0000
@@ -375,11 +375,11 @@ Result<Frame*> Frame::read(PyObject* frame_addr, PyObject** prev_addr)
     PyFrameObject py_frame;
 
     if (copy_type(frame_addr, py_frame))
-        return Result<Frame*>::error();
+        return Result<Frame*>::error(ErrorKind::FrameError);
 
     auto frame_result = Frame::get(py_frame.f_code, py_frame.f_lasti);
     if (!frame_result) {
-        return Result<Frame*>::error();
+        return Result<Frame*>::error(ErrorKind::FrameError);
     }
     Frame* frame = *frame_result;
 
@@ -403,7 +403,7 @@ Result<Frame*> Frame::get(PyCodeObject* code_addr, int lasti)
     {
         PyCodeObject code;
         if (copy_type(code_addr, code))
-            return Result<Frame*>(&INVALID_FRAME);
+            return Result<Frame*>::ok(&INVALID_FRAME);
 
         auto frame_result = Frame::create(&code, lasti);
         if (frame_result)
@@ -456,7 +456,7 @@ Result<Frame*> Frame::get(unw_cursor_t& cursor)
     unw_word_t pc;
     unw_get_reg(&cursor, UNW_REG_IP, &pc);
     if (pc == 0)
-        return Result<Frame*>::error();
+        return Result<Frame*>::error(ErrorKind::FrameError);
 
     uintptr_t frame_key = (uintptr_t)pc;
     

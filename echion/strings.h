@@ -50,25 +50,25 @@ static Result<std::string> pyunicode_to_utf8(PyObject* str_addr)
 {
     PyUnicodeObject str;
     if (copy_type(str_addr, str))
-        return Result<std::string>::error();
+        return Result<std::string>::error(ErrorKind::PyUnicodeError);
 
     PyASCIIObject& ascii = str._base._base;
 
     if (ascii.state.kind != 1)
-        return Result<std::string>::error();
+        return Result<std::string>::error(ErrorKind::PyUnicodeError);
 
     const char* data = ascii.state.compact ? (const char*)(((uint8_t*)str_addr) + sizeof(ascii))
                                            : (const char*)str._base.utf8;
     if (data == NULL)
-        return Result<std::string>::error();
+        return Result<std::string>::error(ErrorKind::PyUnicodeError);
 
     Py_ssize_t size = ascii.state.compact ? ascii.length : str._base.utf8_length;
     if (size < 0 || size > 1024)
-        return Result<std::string>::error();
+        return Result<std::string>::error(ErrorKind::PyUnicodeError);
 
     auto dest = std::string(size, '\0');
     if (copy_generic(data, dest.data(), size))
-        return Result<std::string>::error();
+        return Result<std::string>::error(ErrorKind::PyUnicodeError);
 
     return Result<std::string>(dest);
 }
@@ -106,13 +106,13 @@ public:
             {
                 auto unicode_result = pyunicode_to_utf8(s);
                 if (!unicode_result)
-                    return Result<Key>::error();
+                    return Result<Key>::error(ErrorKind::PyUnicodeError);
                 str = *unicode_result;
             }
 #else
             auto str_result = pyunicode_to_utf8(s);
             if (!str_result)
-                return Result<Key>::error();
+                return Result<Key>::error(ErrorKind::PyUnicodeError);
             std::string str = *str_result;
 #endif
             this->emplace(k, str);
@@ -171,7 +171,7 @@ public:
 
         unw_proc_info_t pi;
         if ((unw_get_proc_info(&cursor, &pi)))
-            return Result<Key>::error();
+            return Result<Key>::error(ErrorKind::UnwindError);
 
         auto k = (Key)pi.start_ip;
 
@@ -180,7 +180,7 @@ public:
             unw_word_t offset;  // Ignored. All the information is in the PC anyway.
             char sym[256];
             if (unw_get_proc_name(&cursor, sym, sizeof(sym), &offset))
-                return Result<Key>::error();
+                return Result<Key>::error(ErrorKind::UnwindError);
 
             char* name = sym;
 
@@ -211,7 +211,7 @@ public:
 
         auto it = this->find(key);
         if (it == this->end())
-            return Result<std::string*>::error();
+            return Result<std::string*>::error(ErrorKind::LookupError);
 
         return Result<std::string*>(&it->second);
     };
