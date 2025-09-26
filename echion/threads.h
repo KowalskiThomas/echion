@@ -487,10 +487,17 @@ void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
     }
 }
 
+static size_t for_each_thread_runs = 0;
+static std::chrono::duration<unsigned long long, std::nano> for_each_thread_duration;
+static std::chrono::time_point<std::chrono::high_resolution_clock> previous_end=std::chrono::high_resolution_clock::now();
+
 // ----------------------------------------------------------------------------
 static void for_each_thread(InterpreterInfo& interp,
                             std::function<void(PyThreadState*, ThreadInfo&)> callback)
 {
+    for_each_thread_runs++;
+    auto start = std::chrono::high_resolution_clock::now();
+
     std::unordered_set<PyThreadState*> threads;
     std::unordered_set<PyThreadState*> seen_threads;
 
@@ -569,4 +576,21 @@ static void for_each_thread(InterpreterInfo& interp,
             callback(&tstate, *thread_info_map.find(tstate.thread_id)->second);
         }
     }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto this_duration = end - start;
+    auto time_between_runs = start - previous_end;
+    for_each_thread_duration += this_duration;
+
+    if (for_each_thread_runs % 1000 == 0) {
+        std::cerr << std::endl;
+        std::cerr << "================================================" << std::endl;
+        std::cerr << "for_each_thread_runs:           " << for_each_thread_runs << std::endl;
+        std::cerr << "total for_each_thread_duration: " << for_each_thread_duration.count() << std::endl;
+        std::cerr << "this_duration:                  " << this_duration.count() << std::endl;
+        std::cerr << "avg for_each_thread_duration:   " << for_each_thread_duration.count() / for_each_thread_runs << std::endl;
+        std::cerr << "time_between_runs:              " << time_between_runs.count() << std::endl;
+    }
+
+    previous_end = end;
 }
