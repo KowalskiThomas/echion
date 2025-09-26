@@ -65,13 +65,14 @@ public:
         if (pthread_getcpuclockid((pthread_t)thread_id, &cpu_clock_id))
             return Result<std::unique_ptr<ThreadInfo>>::error(ErrorKind::ThreadInfoError);
 
+        auto thread_info = std::make_unique<ThreadInfo>(thread_id, native_id, name, cpu_clock_id);
 #elif defined PL_DARWIN
         // pthread_mach_thread_np does not return a status code; the behaviour is undefined
         // if thread_id is invalid.
-        mach_port = pthread_mach_thread_np((pthread_t)thread_id);
+        auto mach_port = pthread_mach_thread_np((pthread_t)thread_id);
+        auto thread_info = std::make_unique<ThreadInfo>(thread_id, native_id, name, mach_port);
 #endif
 
-        auto thread_info = std::make_unique<ThreadInfo>(thread_id, native_id, name, cpu_clock_id);
 
         auto update_cpu_time_result = thread_info->update_cpu_time();
         if (!update_cpu_time_result)
@@ -80,17 +81,24 @@ public:
         return Result<std::unique_ptr<ThreadInfo>>(std::move(thread_info));
     };
 
+#ifdef PL_LINUX
     ThreadInfo(uintptr_t thread_id, unsigned long native_id, const char* name, clockid_t cpu_clock_id)
         : thread_id(thread_id), native_id(native_id), name(name), cpu_clock_id(cpu_clock_id)
     {
     }
+#elif defined PL_DARWIN
+    ThreadInfo(uintptr_t thread_id, unsigned long native_id, const char* name, mach_port_t mach_port)
+        : thread_id(thread_id), native_id(native_id), name(name), mach_port(mach_port)
+    {
+    }
+#endif
 
     ThreadInfo(const ThreadInfo&) = delete;
     ThreadInfo& operator=(const ThreadInfo&) = delete;
 
 
 private:
-    void unwind_tasks();
+    [[nodiscard("error results should be checked")]] Result<void> unwind_tasks();
     void unwind_greenlets(PyThreadState*, unsigned long);
 };
 
@@ -112,7 +120,7 @@ private:
         return Result<void>::error(ErrorKind::ThreadInfoError);
 
     if (info.flags & TH_FLAGS_IDLE)
-        return;
+        return Result<void>::ok();
 
     this->cpu_time = TV_TO_MICROSECOND(info.user_time) + TV_TO_MICROSECOND(info.system_time);
 #endif
@@ -187,7 +195,9 @@ inline std::mutex thread_info_map_lock;
 
         if (asyncio_loop)
         {
-            unwind_tasks();
+            if (!unwind_tasks()) {
+                return Result<void>::error(ErrorKind::UnwindError);
+            }
         }
 
         // We make the assumption that gevent and asyncio are not mixed
@@ -199,15 +209,19 @@ inline std::mutex thread_info_map_lock;
 }
 
 // ----------------------------------------------------------------------------
-void ThreadInfo::unwind_tasks()
+Result<void> ThreadInfo::unwind_tasks()
 {
     std::vector<TaskInfo::Ref> leaf_tasks;
     std::unordered_set<PyObject*> parent_tasks;
     std::unordered_map<PyObject*, TaskInfo::Ref> waitee_map;  // Indexed by task origin
     std::unordered_map<PyObject*, TaskInfo::Ref> origin_map;  // Indexed by task origin
 
-    auto all_tasks = get_all_tasks((PyObject*)asyncio_loop);
+    auto maybe_all_tasks = get_all_tasks((PyObject*)asyncio_loop);
+    if (!maybe_all_tasks) {
+        return Result<void>::error(ErrorKind::TaskInfoError);
+    }
 
+    auto all_tasks = std::move(*maybe_all_tasks);
     {
         std::lock_guard<std::mutex> lock(task_link_map_lock);
 
@@ -318,6 +332,8 @@ void ThreadInfo::unwind_tasks()
 
         current_tasks.push_back(std::move(stack_info));
     }
+
+    return Result<void>::ok();
 }
 
 // ----------------------------------------------------------------------------
@@ -383,7 +399,7 @@ void ThreadInfo::unwind_greenlets(PyThreadState* tstate, unsigned long native_id
             if (parent_frame == FRAME_NOT_SET || parent_frame == Py_None)
                 break;
 
-            auto count = parent_greenlet->second->unwind(parent_frame, tstate, stack);
+            parent_greenlet->second->unwind(parent_frame, tstate, stack);
 
             // Move up the greenlet chain
             greenlet_id = parent_greenlet_id;

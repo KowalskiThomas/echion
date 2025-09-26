@@ -174,6 +174,8 @@ static size_t unwind_frame_unsafe(PyObject* frame, FrameStack& stack)
         current_frame = (PyObject*)((PyFrameObject*)current_frame)->f_back;
 #endif
     }
+
+    return count;
 }
 
 // ----------------------------------------------------------------------------

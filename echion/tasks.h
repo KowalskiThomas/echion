@@ -207,58 +207,59 @@ inline std::mutex task_link_map_lock;
 
 // ----------------------------------------------------------------------------
 // TODO: Make this a "for_each_task" function?
-std::vector<TaskInfo::Ptr> get_all_tasks(PyObject* loop)
+Result<std::vector<TaskInfo::Ptr>> get_all_tasks(PyObject* loop)
 {
     std::vector<TaskInfo::Ptr> tasks;
     if (loop == NULL)
-        return tasks;
+        return std::move(tasks);
 
     auto scheduled_set_result = MirrorSet::create(asyncio_scheduled_tasks);
-    if (scheduled_set_result)
+    if (!scheduled_set_result)
     {
-        auto scheduled_tasks_result = (*scheduled_set_result).as_unordered_set();
-        if (!scheduled_tasks_result)
-            return tasks;
+        return Result<std::vector<TaskInfo::Ptr>>::error(ErrorKind::MirrorError);
+    }
 
-        for (auto task_wr_addr : *scheduled_tasks_result)
+    auto scheduled_tasks_result = (*scheduled_set_result).as_unordered_set();
+    if (!scheduled_tasks_result)
+        return tasks;
+
+    for (auto task_wr_addr : *scheduled_tasks_result)
+    {
+        PyWeakReference task_wr;
+        if (copy_type(task_wr_addr, task_wr))
+            continue;
+
+        auto task_result = TaskInfo::create((TaskObj*)task_wr.wr_object);
+        if (task_result)
         {
-            PyWeakReference task_wr;
-            if (copy_type(task_wr_addr, task_wr))
-                continue;
-
-            auto task_result = TaskInfo::create((TaskObj*)task_wr.wr_object);
-            if (task_result)
-            {
-                auto task_info = std::make_unique<TaskInfo>(std::move(*task_result));
-                if (task_info->loop == loop)
-                    tasks.push_back(std::move(task_info));
-            }
+            auto task_info = std::make_unique<TaskInfo>(std::move(*task_result));
+            if (task_info->loop == loop)
+                tasks.push_back(std::move(task_info));
         }
+    }
 
-        if (asyncio_eager_tasks != NULL)
+    if (asyncio_eager_tasks != NULL)
+    {
+        auto eager_set_result = MirrorSet::create(asyncio_eager_tasks);
+        if (eager_set_result)
         {
-            auto eager_set_result = MirrorSet::create(asyncio_eager_tasks);
-            if (eager_set_result)
+            auto eager_tasks_result = (*eager_set_result).as_unordered_set();
+            if (eager_tasks_result)
             {
-                auto eager_tasks_result = (*eager_set_result).as_unordered_set();
-                if (eager_tasks_result)
+                for (auto task_addr : *eager_tasks_result)
                 {
-                    for (auto task_addr : *eager_tasks_result)
+                    auto task_result = TaskInfo::create((TaskObj*)task_addr);
+                    if (task_result)
                     {
-                        auto task_result = TaskInfo::create((TaskObj*)task_addr);
-                        if (task_result)
-                        {
-                            auto task_info = std::make_unique<TaskInfo>(std::move(*task_result));
-                            if (task_info->loop == loop)
-                                tasks.push_back(std::move(task_info));
-                        }
+                        auto task_info = std::make_unique<TaskInfo>(std::move(*task_result));
+                        if (task_info->loop == loop)
+                            tasks.push_back(std::move(task_info));
                     }
                 }
             }
         }
     }
-
-    return tasks;
+    return std::move(tasks);
 }
 
 // ----------------------------------------------------------------------------

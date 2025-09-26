@@ -216,7 +216,7 @@ Result<void> Frame::infer_location(PyCodeObject* code_obj, int lasti)
 #else
     auto table = pybytes_to_bytes_and_size(code_obj->co_lnotab, &len);
     if (table == nullptr)
-        return Result<void>::error();
+        return Result<void>::error(ErrorKind::PyBytesError);
 
     for (int i = 0, bc = 0; i < len; i++)
     {
