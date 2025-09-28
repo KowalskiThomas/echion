@@ -241,25 +241,30 @@ Result<std::vector<TaskInfo::Ptr>> get_all_tasks(PyObject* loop)
     if (asyncio_eager_tasks != NULL)
     {
         auto eager_set_result = MirrorSet::create(asyncio_eager_tasks);
-        if (eager_set_result)
+        if (!eager_set_result)
         {
-            auto eager_tasks_result = (*eager_set_result).as_unordered_set();
-            if (eager_tasks_result)
-            {
-                for (auto task_addr : *eager_tasks_result)
-                {
-                    auto task_result = TaskInfo::create((TaskObj*)task_addr);
-                    if (task_result)
-                    {
-                        auto task_info = std::make_unique<TaskInfo>(std::move(*task_result));
-                        if (task_info->loop == loop)
-                            tasks.push_back(std::move(task_info));
-                    }
-                }
-            }
+            return Result<std::vector<TaskInfo::Ptr>>::error(ErrorKind::MirrorError);
+        }
+
+        auto eager_tasks_result = (*eager_set_result).as_unordered_set();
+        if (!eager_tasks_result)
+        {
+            return Result<std::vector<TaskInfo::Ptr>>::error(ErrorKind::MirrorError);
+        }
+
+        for (auto task_addr : *eager_tasks_result)
+        {
+            auto task_info_result = TaskInfo::create((TaskObj*)task_addr);
+            if (!task_info_result)
+                continue;
+
+            auto task_info = std::make_unique<TaskInfo>(std::move(*task_info_result));
+            if (task_info->loop == loop)
+                tasks.push_back(std::move(task_info));
         }
     }
-    return std::move(tasks);
+
+    return tasks;
 }
 
 // ----------------------------------------------------------------------------

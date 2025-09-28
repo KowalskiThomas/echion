@@ -200,7 +200,7 @@ static size_t unwind_frame_unsafe(PyObject* frame, FrameStack& stack)
     _PyCFrame cframe;
     _PyCFrame* cframe_addr = tstate->cframe;
     if (copy_type(cframe_addr, cframe))
-        return Result<void>::error(ErrorKind::FrameError);
+        return Result<void>::ok();
 
     PyObject* frame_addr = (PyObject*)cframe.current_frame;
 #else  // Python < 3.11

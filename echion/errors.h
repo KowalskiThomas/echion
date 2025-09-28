@@ -42,10 +42,6 @@ struct Result {
     }
     
     Result(const Result& other) {
-        if (success) {
-            value.~T();
-        }
-
         error_value = other.error_value;
         success = other.success;
         if (success) {

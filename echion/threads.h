@@ -54,7 +54,7 @@ public:
     [[nodiscard("error results should be checked")]] Result<void> update_cpu_time();
     bool is_running();
 
-    void sample(int64_t, PyThreadState*, microsecond_t);
+    [[nodiscard("error results should be checked")]] Result<void> sample(int64_t, PyThreadState*, microsecond_t);
     [[nodiscard("error results should be checked")]] Result<void> unwind(PyThreadState*);
 
     // ------------------------------------------------------------------------
@@ -99,7 +99,7 @@ public:
 
 private:
     [[nodiscard("error results should be checked")]] Result<void> unwind_tasks();
-    void unwind_greenlets(PyThreadState*, unsigned long);
+    [[nodiscard("error results should be checked")]] Result<void> unwind_greenlets(PyThreadState*, unsigned long);
 };
 
 [[nodiscard("error results should be checked")]] Result<void> ThreadInfo::update_cpu_time()
@@ -195,7 +195,8 @@ inline std::mutex thread_info_map_lock;
 
         if (asyncio_loop)
         {
-            if (!unwind_tasks()) {
+            auto result = unwind_tasks();
+            if (!result) {
                 return Result<void>::error(ErrorKind::UnwindError);
             }
         }
@@ -203,8 +204,12 @@ inline std::mutex thread_info_map_lock;
         // We make the assumption that gevent and asyncio are not mixed
         // together to keep the logic here simple. We can always revisit this
         // should there be a substantial demand for it.
-        unwind_greenlets(tstate, native_id);
+        auto greenlet_result = unwind_greenlets(tstate, native_id);
+        if (!greenlet_result) {
+            return Result<void>::error(ErrorKind::UnwindError);
+        }
     }
+
     return Result<void>::ok();
 }
 
@@ -337,12 +342,12 @@ Result<void> ThreadInfo::unwind_tasks()
 }
 
 // ----------------------------------------------------------------------------
-void ThreadInfo::unwind_greenlets(PyThreadState* tstate, unsigned long native_id)
+Result<void> ThreadInfo::unwind_greenlets(PyThreadState* tstate, unsigned long native_id)
 {
     const std::lock_guard<std::mutex> guard(greenlet_info_map_lock);
 
     if (greenlet_thread_map.find(native_id) == greenlet_thread_map.end())
-        return;
+        return Result<void>::ok();
 
     std::unordered_set<GreenletInfo::ID> parent_greenlets;
 
@@ -380,7 +385,9 @@ void ThreadInfo::unwind_greenlets(PyThreadState* tstate, unsigned long native_id
         auto stack_info = std::make_unique<StackInfo>(greenlet->name, on_cpu);
         auto& stack = stack_info->stack;
 
-        greenlet->unwind(frame, tstate, stack);
+        auto result = greenlet->unwind(frame, tstate, stack);
+        if (!result)
+            return Result<void>::error(ErrorKind::UnwindError);
 
         // Unwind the parent greenlets
         for (;;)
@@ -399,7 +406,9 @@ void ThreadInfo::unwind_greenlets(PyThreadState* tstate, unsigned long native_id
             if (parent_frame == FRAME_NOT_SET || parent_frame == Py_None)
                 break;
 
-            parent_greenlet->second->unwind(parent_frame, tstate, stack);
+            auto result = parent_greenlet->second->unwind(parent_frame, tstate, stack);
+            if (!result)
+                return Result<void>::error(ErrorKind::UnwindError);
 
             // Move up the greenlet chain
             greenlet_id = parent_greenlet_id;
@@ -407,10 +416,12 @@ void ThreadInfo::unwind_greenlets(PyThreadState* tstate, unsigned long native_id
 
         current_greenlets.push_back(std::move(stack_info));
     }
+
+    return Result<void>::ok();
 }
 
 // ----------------------------------------------------------------------------
-void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
+Result<void> ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
 {
     Renderer::get().render_thread_begin(tstate, name, delta, thread_id, native_id);
 
@@ -419,13 +430,13 @@ void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
         microsecond_t previous_cpu_time = cpu_time;
         auto update_cpu_time_result = update_cpu_time();
         if (!update_cpu_time_result) {
-            return;  // Skip this sample if update_cpu_time fails
+            return Result<void>::error(ErrorKind::ThreadInfoError);
         }
 
         bool running = is_running();
         if (!running && ignore_non_running_threads)
         {
-            return;
+            return Result<void>::ok();
         }
 
         Renderer::get().render_cpu_time(running ? cpu_time - previous_cpu_time : 0);
@@ -433,7 +444,7 @@ void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
 
     auto unwind_result = unwind(tstate);
     if (!unwind_result)
-        return;  // Skip this sample if unwind fails
+        return Result<void>::ok();  // Skip this sample if unwind fails
 
     // Asyncio tasks
     if (current_tasks.empty())
@@ -465,20 +476,21 @@ void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
     {
         for (auto& task_stack_info : current_tasks)
         {
-            auto task_name_lookup = string_table.lookup(task_stack_info->task_name);
-            if (!task_name_lookup)
-                continue;  // Skip this task if name lookup fails
-            Renderer::get().render_task_begin(**task_name_lookup, task_stack_info->on_cpu);
+            auto maybe_task_name = string_table.lookup(task_stack_info->task_name);
+            if (!maybe_task_name)
+                return Result<void>::error(ErrorKind::LookupError);
+
+            Renderer::get().render_task_begin(**maybe_task_name, task_stack_info->on_cpu);
             Renderer::get().render_stack_begin(pid, iid, name);
             if (native)
             {
                 // NOTE: These stacks might be non-sensical, especially with
                 // Python < 3.11.
-                if (auto result = interleave_stacks(task_stack_info->stack); result)
-                {
-                    interleaved_stack.render();
-                }
-                // If interleave_stacks fails, we skip rendering this sample
+                auto result = interleave_stacks(task_stack_info->stack);
+                if (!result)
+                    return Result<void>::error(ErrorKind::StackChunkError);
+
+                interleaved_stack.render();
             }
             else
                 task_stack_info->stack.render();
@@ -494,10 +506,11 @@ void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
     {
         for (auto& greenlet_stack : current_greenlets)
         {
-            auto greenlet_name_lookup = string_table.lookup(greenlet_stack->task_name);
-            if (!greenlet_name_lookup)
-                continue;  // Skip this greenlet if name lookup fails
-            Renderer::get().render_task_begin(**greenlet_name_lookup, greenlet_stack->on_cpu);
+            auto maybe_greenlet_name = string_table.lookup(greenlet_stack->task_name);
+            if (!maybe_greenlet_name)
+                return Result<void>::error(ErrorKind::LookupError);
+
+            Renderer::get().render_task_begin(**maybe_greenlet_name, greenlet_stack->on_cpu);
             Renderer::get().render_stack_begin(pid, iid, name);
 
             auto& stack = greenlet_stack->stack;
@@ -505,11 +518,11 @@ void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
             {
                 // NOTE: These stacks might be non-sensical, especially with
                 // Python < 3.11.
-                if (auto result = interleave_stacks(stack); result)
-                {
-                    interleaved_stack.render();
-                }
-                // If interleave_stacks fails, we skip rendering this sample
+                auto result = interleave_stacks(stack);
+                if (!result)
+                    return Result<void>::error(ErrorKind::StackChunkError);
+
+                interleaved_stack.render();
             }
             else
                 stack.render();
@@ -519,6 +532,8 @@ void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
 
         current_greenlets.clear();
     }
+
+    return Result<void>::ok();
 }
 
 static size_t for_each_thread_runs = 0;
