@@ -21,6 +21,7 @@ enum class ErrorKind {
     GenInfoError,
     TaskInfoError,
     ThreadInfoError,
+    CpuTimeError,
 };
 
 template<typename T>

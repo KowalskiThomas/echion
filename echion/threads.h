@@ -423,6 +423,12 @@ Result<void> ThreadInfo::unwind_greenlets(PyThreadState* tstate, unsigned long n
 // ----------------------------------------------------------------------------
 Result<void> ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
 {
+    static size_t call_count = 0;
+    call_count++;
+    if (call_count % 1000 == 0) {
+        printf("threadinfo::sample call count: %zu", call_count);
+    }
+
     Renderer::get().render_thread_begin(tstate, name, delta, thread_id, native_id);
 
     if (cpu)
@@ -430,7 +436,7 @@ Result<void> ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_
         microsecond_t previous_cpu_time = cpu_time;
         auto update_cpu_time_result = update_cpu_time();
         if (!update_cpu_time_result) {
-            return Result<void>::error(ErrorKind::ThreadInfoError);
+            return Result<void>::error(ErrorKind::CpuTimeError);
         }
 
         bool running = is_running();

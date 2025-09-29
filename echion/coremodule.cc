@@ -240,7 +240,18 @@ static inline void _sampler()
             auto start = std::chrono::high_resolution_clock::now();
             for_each_interp([=](InterpreterInfo& interp) -> void {
                 for_each_thread(interp, [=](PyThreadState* tstate, ThreadInfo& thread) {
-                    (void)thread.sample(interp.id, tstate, wall_time);
+                    static size_t error_count = 0;
+                    static size_t cpu_time_error_count = 0;
+
+                    auto result = thread.sample(interp.id, tstate, wall_time);
+                    if (!result) {
+                        error_count++;
+                        if (result.error_value() == ErrorKind::CpuTimeError) {
+                            cpu_time_error_count++;
+                        }
+
+                        printf("total error count: %zu, cputimeerrors: %zu\n", error_count, cpu_time_error_count);
+                    }
                 });
             });
             auto end = std::chrono::high_resolution_clock::now();
