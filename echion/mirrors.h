@@ -135,7 +135,7 @@ private:
     {
         // Copy the value data and update the pointer
         char* values_addr = mirror.data.get() + keys_size;
-        if (copy_generic(mirror.dict.ma_values, values_addr, values_size))
+        if (copy_generic(mirror.dict.ma_values, keys_size, values_size))
             return Result<MirrorDict>::error(ErrorKind::MirrorError);
 
         mirror.dict.ma_values = (PyDictValues*)values_addr;

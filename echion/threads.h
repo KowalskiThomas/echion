@@ -426,7 +426,7 @@ Result<void> ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_
     static size_t call_count = 0;
     call_count++;
     if (call_count % 1000 == 0) {
-        printf("threadinfo::sample call count: %zu", call_count);
+        std::cout << "threadinfo::sample call count: " << call_count << std::endl;
     }
 
     Renderer::get().render_thread_begin(tstate, name, delta, thread_id, native_id);
@@ -466,11 +466,13 @@ Result<void> ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_
             // Print the stack
             if (native)
             {
-                if (auto result = interleave_stacks(); result)
+                auto result = interleave_stacks();
+                if (!result)
                 {
-                    interleaved_stack.render();
+                    // If interleave_stacks fails, we skip rendering this sample
+                    return Result<void>::error(result.error_value());
                 }
-                // If interleave_stacks fails, we skip rendering this sample
+                interleaved_stack.render();
             }
             else
                 python_stack.render();

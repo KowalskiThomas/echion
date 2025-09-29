@@ -76,11 +76,13 @@ static void do_where(std::ostream& stream)
 
             if (native)
             {
-                if (auto result = interleave_stacks(); result)
-                {
-                    interleaved_stack.render_where();
+                auto result = interleave_stacks();
+                if (!result) {
+                    // If interleave_stacks fails, we skip rendering this sample
+                    return;
                 }
-                // If interleave_stacks fails, we skip rendering this sample
+
+                interleaved_stack.render_where();
             }
             else
                 python_stack.render_where();
@@ -250,7 +252,7 @@ static inline void _sampler()
                             cpu_time_error_count++;
                         }
 
-                        printf("total error count: %zu, cputimeerrors: %zu\n", error_count, cpu_time_error_count);
+                        std::cerr << "total error count: " << error_count << ", cputimeerrors: " << cpu_time_error_count << std::endl;
                     }
                 });
             });
