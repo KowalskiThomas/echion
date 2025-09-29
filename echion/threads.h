@@ -396,6 +396,13 @@ void ThreadInfo::unwind_greenlets(PyThreadState* tstate, unsigned long native_id
 // ----------------------------------------------------------------------------
 void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
 {
+    static size_t call_count = 0;
+    call_count++;
+    if (call_count % 1000 == 0)
+    {
+        printf("threadinfo::sample call count: %zu", call_count);
+    }
+
     Renderer::get().render_thread_begin(tstate, name, delta, thread_id, native_id);
 
     if (cpu)
@@ -579,9 +586,12 @@ static void for_each_thread(InterpreterInfo& interp,
     auto end = std::chrono::high_resolution_clock::now();
     for_each_thread_duration += end - start;
 
-    if (for_each_thread_runs % 1000 == 0) {
+    if (for_each_thread_runs % 1000 == 0)
+    {
         std::cout << "for_each_thread_runs:         " << for_each_thread_runs << std::endl;
-        std::cout << "for_each_thread_duration:     " << for_each_thread_duration.count() << std::endl;
-        std::cout << "avg for_each_thread_duration: " << for_each_thread_duration.count() / for_each_thread_runs << std::endl;
+        std::cout << "for_each_thread_duration:     " << for_each_thread_duration.count()
+                  << std::endl;
+        std::cout << "avg for_each_thread_duration: "
+                  << for_each_thread_duration.count() / for_each_thread_runs << std::endl;
     }
 }
