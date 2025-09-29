@@ -5,6 +5,7 @@
 #pragma once
 
 #include <Python.h>
+#include <memory>
 #define Py_BUILD_CORE
 
 #include <algorithm>
@@ -22,35 +23,19 @@
 #include <mach/mach.h>
 #endif
 
+#include <echion/errors.h>
 #include <echion/greenlets.h>
 #include <echion/render.h>
 #include <echion/signals.h>
 #include <echion/stacks.h>
 #include <echion/tasks.h>
 #include <echion/timing.h>
+#include <echion/interp.h>
 
 class ThreadInfo
 {
 public:
     using Ptr = std::unique_ptr<ThreadInfo>;
-
-    class Error : public std::exception
-    {
-    public:
-        const char* what() const noexcept override
-        {
-            return "Cannot create thread info object";
-        }
-    };
-
-    class CpuTimeError : public Error
-    {
-    public:
-        const char* what() const noexcept override
-        {
-            return "Cannot update CPU time";
-        }
-    };
 
     uintptr_t thread_id;
     unsigned long native_id;
@@ -66,39 +51,63 @@ public:
 
     uintptr_t asyncio_loop = 0;
 
-    void update_cpu_time();
+    [[nodiscard("error results should be checked")]] Result<void> update_cpu_time();
     bool is_running();
 
-    void sample(int64_t, PyThreadState*, microsecond_t);
-    void unwind(PyThreadState*);
+    [[nodiscard("error results should be checked")]] Result<void> sample(int64_t, PyThreadState*, microsecond_t);
+    [[nodiscard("error results should be checked")]] Result<void> unwind(PyThreadState*);
 
     // ------------------------------------------------------------------------
-    ThreadInfo(uintptr_t thread_id, unsigned long native_id, const char* name)
-        : thread_id(thread_id), native_id(native_id), name(name)
+    [[nodiscard("error results should be checked")]] static Result<std::unique_ptr<ThreadInfo>> create(uintptr_t thread_id, unsigned long native_id, const char* name)
     {
 #if defined PL_LINUX
+        clockid_t cpu_clock_id;
         if (pthread_getcpuclockid((pthread_t)thread_id, &cpu_clock_id))
-            throw ThreadInfo::Error{};
+            return Result<std::unique_ptr<ThreadInfo>>::error(ErrorKind::ThreadInfoError);
 
+        auto thread_info = std::make_unique<ThreadInfo>(thread_id, native_id, name, cpu_clock_id);
 #elif defined PL_DARWIN
         // pthread_mach_thread_np does not return a status code; the behaviour is undefined
         // if thread_id is invalid.
-        mach_port = pthread_mach_thread_np((pthread_t)thread_id);
+        auto mach_port = pthread_mach_thread_np((pthread_t)thread_id);
+        auto thread_info = std::make_unique<ThreadInfo>(thread_id, native_id, name, mach_port);
 #endif
-        update_cpu_time();
+
+
+        auto update_cpu_time_result = thread_info->update_cpu_time();
+        if (!update_cpu_time_result)
+            return Result<std::unique_ptr<ThreadInfo>>::error(ErrorKind::ThreadInfoError);
+
+        return Result<std::unique_ptr<ThreadInfo>>(std::move(thread_info));
     };
 
+#ifdef PL_LINUX
+    ThreadInfo(uintptr_t thread_id, unsigned long native_id, const char* name, clockid_t cpu_clock_id)
+        : thread_id(thread_id), native_id(native_id), name(name), cpu_clock_id(cpu_clock_id)
+    {
+    }
+#elif defined PL_DARWIN
+    ThreadInfo(uintptr_t thread_id, unsigned long native_id, const char* name, mach_port_t mach_port)
+        : thread_id(thread_id), native_id(native_id), name(name), mach_port(mach_port)
+    {
+    }
+#endif
+
+    ThreadInfo(const ThreadInfo&) = delete;
+    ThreadInfo& operator=(const ThreadInfo&) = delete;
+
+
 private:
-    void unwind_tasks();
-    void unwind_greenlets(PyThreadState*, unsigned long);
+    [[nodiscard("error results should be checked")]] Result<void> unwind_tasks();
+    [[nodiscard("error results should be checked")]] Result<void> unwind_greenlets(PyThreadState*, unsigned long);
 };
 
-void ThreadInfo::update_cpu_time()
+[[nodiscard("error results should be checked")]] Result<void> ThreadInfo::update_cpu_time()
 {
 #if defined PL_LINUX
     struct timespec ts;
     if (clock_gettime(cpu_clock_id, &ts))
-        throw ThreadInfo::CpuTimeError{};
+        return Result<void>::error(ErrorKind::ThreadInfoError);
 
     this->cpu_time = TS_TO_MICROSECOND(ts);
 #elif defined PL_DARWIN
@@ -108,13 +117,15 @@ void ThreadInfo::update_cpu_time()
         thread_info((thread_act_t)this->mach_port, THREAD_BASIC_INFO, (thread_info_t)&info, &count);
 
     if (kr != KERN_SUCCESS)
-        throw ThreadInfo::CpuTimeError{};
+        return Result<void>::error(ErrorKind::ThreadInfoError);
 
     if (info.flags & TH_FLAGS_IDLE)
-        return;
+        return Result<void>::ok();
 
     this->cpu_time = TV_TO_MICROSECOND(info.user_time) + TV_TO_MICROSECOND(info.system_time);
 #endif
+
+    return Result<void>::ok();
 }
 
 bool ThreadInfo::is_running()
@@ -156,7 +167,7 @@ inline std::unordered_map<uintptr_t, ThreadInfo::Ptr>& thread_info_map =
 inline std::mutex thread_info_map_lock;
 
 // ----------------------------------------------------------------------------
-void ThreadInfo::unwind(PyThreadState* tstate)
+[[nodiscard("error results should be checked")]] Result<void> ThreadInfo::unwind(PyThreadState* tstate)
 {
     if (native)
     {
@@ -178,36 +189,44 @@ void ThreadInfo::unwind(PyThreadState* tstate)
     }
     else
     {
-        unwind_python_stack(tstate);
+        auto python_result = unwind_python_stack(tstate);
+        if (!python_result)
+            return Result<void>::error(ErrorKind::UnwindError);
+
         if (asyncio_loop)
         {
-            try
-            {
-                unwind_tasks();
-            }
-            catch (TaskInfo::Error&)
-            {
-                // We failed to unwind tasks
+            auto result = unwind_tasks();
+            if (!result) {
+                return Result<void>::error(ErrorKind::UnwindError);
             }
         }
 
         // We make the assumption that gevent and asyncio are not mixed
         // together to keep the logic here simple. We can always revisit this
         // should there be a substantial demand for it.
-        unwind_greenlets(tstate, native_id);
+        auto greenlet_result = unwind_greenlets(tstate, native_id);
+        if (!greenlet_result) {
+            return Result<void>::error(ErrorKind::UnwindError);
+        }
     }
+
+    return Result<void>::ok();
 }
 
 // ----------------------------------------------------------------------------
-void ThreadInfo::unwind_tasks()
+Result<void> ThreadInfo::unwind_tasks()
 {
     std::vector<TaskInfo::Ref> leaf_tasks;
     std::unordered_set<PyObject*> parent_tasks;
     std::unordered_map<PyObject*, TaskInfo::Ref> waitee_map;  // Indexed by task origin
     std::unordered_map<PyObject*, TaskInfo::Ref> origin_map;  // Indexed by task origin
 
-    auto all_tasks = get_all_tasks((PyObject*)asyncio_loop);
+    auto maybe_all_tasks = get_all_tasks((PyObject*)asyncio_loop);
+    if (!maybe_all_tasks) {
+        return Result<void>::error(ErrorKind::TaskInfoError);
+    }
 
+    auto all_tasks = std::move(*maybe_all_tasks);
     {
         std::lock_guard<std::mutex> lock(task_link_map_lock);
 
@@ -287,7 +306,7 @@ void ThreadInfo::unwind_tasks()
             }
 
             // Add the task name frame
-            stack.push_back(Frame::get(task.name));
+            stack.push_back(*Frame::get(task.name));
 
             // Get the next task in the chain
             PyObject* task_origin = task.origin;
@@ -318,15 +337,17 @@ void ThreadInfo::unwind_tasks()
 
         current_tasks.push_back(std::move(stack_info));
     }
+
+    return Result<void>::ok();
 }
 
 // ----------------------------------------------------------------------------
-void ThreadInfo::unwind_greenlets(PyThreadState* tstate, unsigned long native_id)
+Result<void> ThreadInfo::unwind_greenlets(PyThreadState* tstate, unsigned long native_id)
 {
     const std::lock_guard<std::mutex> guard(greenlet_info_map_lock);
 
     if (greenlet_thread_map.find(native_id) == greenlet_thread_map.end())
-        return;
+        return Result<void>::ok();
 
     std::unordered_set<GreenletInfo::ID> parent_greenlets;
 
@@ -364,7 +385,9 @@ void ThreadInfo::unwind_greenlets(PyThreadState* tstate, unsigned long native_id
         auto stack_info = std::make_unique<StackInfo>(greenlet->name, on_cpu);
         auto& stack = stack_info->stack;
 
-        greenlet->unwind(frame, tstate, stack);
+        auto result = greenlet->unwind(frame, tstate, stack);
+        if (!result)
+            return Result<void>::error(ErrorKind::UnwindError);
 
         // Unwind the parent greenlets
         for (;;)
@@ -383,7 +406,9 @@ void ThreadInfo::unwind_greenlets(PyThreadState* tstate, unsigned long native_id
             if (parent_frame == FRAME_NOT_SET || parent_frame == Py_None)
                 break;
 
-            auto count = parent_greenlet->second->unwind(parent_frame, tstate, stack);
+            auto result = parent_greenlet->second->unwind(parent_frame, tstate, stack);
+            if (!result)
+                return Result<void>::error(ErrorKind::UnwindError);
 
             // Move up the greenlet chain
             greenlet_id = parent_greenlet_id;
@@ -391,28 +416,41 @@ void ThreadInfo::unwind_greenlets(PyThreadState* tstate, unsigned long native_id
 
         current_greenlets.push_back(std::move(stack_info));
     }
+
+    return Result<void>::ok();
 }
 
 // ----------------------------------------------------------------------------
-void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
+Result<void> ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
 {
+    static size_t call_count = 0;
+    call_count++;
+    if (call_count % 1000 == 0) {
+        std::cout << "threadinfo::sample call count: " << call_count << std::endl;
+    }
+
     Renderer::get().render_thread_begin(tstate, name, delta, thread_id, native_id);
 
     if (cpu)
     {
         microsecond_t previous_cpu_time = cpu_time;
-        update_cpu_time();
+        auto update_cpu_time_result = update_cpu_time();
+        if (!update_cpu_time_result) {
+            return Result<void>::error(ErrorKind::CpuTimeError);
+        }
 
         bool running = is_running();
         if (!running && ignore_non_running_threads)
         {
-            return;
+            return Result<void>::ok();
         }
 
         Renderer::get().render_cpu_time(running ? cpu_time - previous_cpu_time : 0);
     }
 
-    unwind(tstate);
+    auto unwind_result = unwind(tstate);
+    if (!unwind_result)
+        return Result<void>::ok();  // Skip this sample if unwind fails
 
     // Asyncio tasks
     if (current_tasks.empty())
@@ -428,7 +466,12 @@ void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
             // Print the stack
             if (native)
             {
-                interleave_stacks();
+                auto result = interleave_stacks();
+                if (!result)
+                {
+                    // If interleave_stacks fails, we skip rendering this sample
+                    return Result<void>::error(result.error_value());
+                }
                 interleaved_stack.render();
             }
             else
@@ -441,14 +484,20 @@ void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
     {
         for (auto& task_stack_info : current_tasks)
         {
-            Renderer::get().render_task_begin(string_table.lookup(task_stack_info->task_name),
-                                              task_stack_info->on_cpu);
+            auto maybe_task_name = string_table.lookup(task_stack_info->task_name);
+            if (!maybe_task_name)
+                return Result<void>::error(ErrorKind::LookupError);
+
+            Renderer::get().render_task_begin(**maybe_task_name, task_stack_info->on_cpu);
             Renderer::get().render_stack_begin(pid, iid, name);
             if (native)
             {
                 // NOTE: These stacks might be non-sensical, especially with
                 // Python < 3.11.
-                interleave_stacks(task_stack_info->stack);
+                auto result = interleave_stacks(task_stack_info->stack);
+                if (!result)
+                    return Result<void>::error(ErrorKind::StackChunkError);
+
                 interleaved_stack.render();
             }
             else
@@ -465,8 +514,11 @@ void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
     {
         for (auto& greenlet_stack : current_greenlets)
         {
-            Renderer::get().render_task_begin(string_table.lookup(greenlet_stack->task_name),
-                                              greenlet_stack->on_cpu);
+            auto maybe_greenlet_name = string_table.lookup(greenlet_stack->task_name);
+            if (!maybe_greenlet_name)
+                return Result<void>::error(ErrorKind::LookupError);
+
+            Renderer::get().render_task_begin(**maybe_greenlet_name, greenlet_stack->on_cpu);
             Renderer::get().render_stack_begin(pid, iid, name);
 
             auto& stack = greenlet_stack->stack;
@@ -474,7 +526,10 @@ void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
             {
                 // NOTE: These stacks might be non-sensical, especially with
                 // Python < 3.11.
-                interleave_stacks(stack);
+                auto result = interleave_stacks(stack);
+                if (!result)
+                    return Result<void>::error(ErrorKind::StackChunkError);
+
                 interleaved_stack.render();
             }
             else
@@ -485,12 +540,20 @@ void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
 
         current_greenlets.clear();
     }
+
+    return Result<void>::ok();
 }
+
+static size_t for_each_thread_runs = 0;
+static std::chrono::duration<unsigned long long, std::nano> for_each_thread_duration;
 
 // ----------------------------------------------------------------------------
 static void for_each_thread(InterpreterInfo& interp,
                             std::function<void(PyThreadState*, ThreadInfo&)> callback)
 {
+    for_each_thread_runs++;
+    auto start = std::chrono::high_resolution_clock::now();
+
     std::unordered_set<PyThreadState*> threads;
     std::unordered_set<PyThreadState*> seen_threads;
 
@@ -538,35 +601,40 @@ static void for_each_thread(InterpreterInfo& interp,
 #else
                 auto native_id = getpid();
 #endif
-                try
+                bool main_thread_tracked = false;
+                for (auto& kv : thread_info_map)
                 {
-                    bool main_thread_tracked = false;
-                    for (auto& kv : thread_info_map)
+                    if (kv.second->name == "MainThread")
                     {
-                        if (kv.second->name == "MainThread")
-                        {
-                            main_thread_tracked = true;
-                            break;
-                        }
+                        main_thread_tracked = true;
+                        break;
                     }
-                    if (main_thread_tracked)
-                        continue;
-
-                    thread_info_map.emplace(
-                        tstate.thread_id,
-                        std::make_unique<ThreadInfo>(tstate.thread_id, native_id, "MainThread"));
                 }
-                catch (ThreadInfo::Error&)
-                {
-                    // We failed to create the thread info object so we skip it.
-                    // We'll likely try again later with the valid thread
-                    // information.
+                if (main_thread_tracked)
                     continue;
+
+                // MainThread is not already tracked, so we create a new ThreadInfo for it.
+                auto maybe_thread_info = ThreadInfo::create(tstate.thread_id, native_id, "MainThread");
+                if (!maybe_thread_info)
+                {
+                    PyErr_SetString(PyExc_RuntimeError, "Failed to create thread info");
+                    return;
                 }
+
+                thread_info_map.emplace(tstate.thread_id, std::move(*maybe_thread_info));
             }
 
             // Call back with the thread state and thread info.
             callback(&tstate, *thread_info_map.find(tstate.thread_id)->second);
         }
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    for_each_thread_duration += end - start;
+
+    if (for_each_thread_runs % 1000 == 0) {
+        std::cout << "for_each_thread_runs:         " << for_each_thread_runs << std::endl;
+        std::cout << "for_each_thread_duration:     " << for_each_thread_duration.count() << std::endl;
+        std::cout << "avg for_each_thread_duration: " << for_each_thread_duration.count() / for_each_thread_runs << std::endl;
     }
 }

@@ -12,9 +12,13 @@
 #include <condition_variable>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <limits>
 #include <mutex>
 #include <thread>
+#include <vector>
+#include <iostream>
 
 #include <fcntl.h>
 #include <sched.h>
@@ -38,6 +42,23 @@
 #include <echion/threads.h>
 #include <echion/timing.h>
 
+struct DurationsPrinter {
+    std::vector<std::chrono::nanoseconds> durations;
+
+    ~DurationsPrinter() {
+        std::cout << "[";
+        for (size_t i = 0; i < durations.size(); i++) {
+            const auto& duration = durations[i];
+            std::cout << duration.count() << (i < durations.size() - 1 ? ", " : "");
+            
+        }
+        std::cout << "]" << std::endl;
+    }
+};
+
+DurationsPrinter printer;
+
+
 // ----------------------------------------------------------------------------
 static void do_where(std::ostream& stream)
 {
@@ -47,13 +68,20 @@ static void do_where(std::ostream& stream)
 
     for_each_interp([](InterpreterInfo& interp) -> void {
         for_each_thread(interp, [](PyThreadState* tstate, ThreadInfo& thread) -> void {
-            thread.unwind(tstate);
+            auto unwind_result = thread.unwind(tstate);
+            if (!unwind_result)
+                return;  // Skip this thread if unwind fails
             WhereRenderer::get().render_thread_begin(tstate, thread.name, /*cpu_time*/ 0,
                                                      tstate->thread_id, thread.native_id);
 
             if (native)
             {
-                interleave_stacks();
+                auto result = interleave_stacks();
+                if (!result) {
+                    // If interleave_stacks fails, we skip rendering this sample
+                    return;
+                }
+
                 interleaved_stack.render_where();
             }
             else
@@ -105,11 +133,7 @@ static inline void _start()
 {
     init_frame_cache(CACHE_MAX_ENTRIES * (1 + native));
 
-    try
-    {
-        Renderer::get().open();
-    }
-    catch (std::exception& e)
+    if (!Renderer::get().open())
     {
         return;
     }
@@ -215,15 +239,25 @@ static inline void _sampler()
         {
             microsecond_t wall_time = now - last_time;
 
+            auto start = std::chrono::high_resolution_clock::now();
             for_each_interp([=](InterpreterInfo& interp) -> void {
                 for_each_thread(interp, [=](PyThreadState* tstate, ThreadInfo& thread) {
-                    try {
-                        thread.sample(interp.id, tstate, wall_time);
-                    } catch (ThreadInfo::CpuTimeError& e) {
-                        // Silently skip sampling this thread
+                    static size_t error_count = 0;
+                    static size_t cpu_time_error_count = 0;
+
+                    auto result = thread.sample(interp.id, tstate, wall_time);
+                    if (!result) {
+                        error_count++;
+                        if (result.error_value() == ErrorKind::CpuTimeError) {
+                            cpu_time_error_count++;
+                        }
+
+                        std::cerr << "total error count: " << error_count << ", cputimeerrors: " << cpu_time_error_count << std::endl;
                     }
                 });
             });
+            auto end = std::chrono::high_resolution_clock::now();
+            printer.durations.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start));
         }
 
         std::this_thread::sleep_for(std::chrono::microseconds(end_time - now));
@@ -308,12 +342,18 @@ static PyObject* track_thread(PyObject* Py_UNUSED(m), PyObject* args)
         const std::lock_guard<std::mutex> guard(thread_info_map_lock);
 
         auto entry = thread_info_map.find(thread_id);
+        auto maybe_thread_info = ThreadInfo::create(thread_id, native_id, thread_name);
+        if (!maybe_thread_info)
+        {
+            PyErr_SetString(PyExc_RuntimeError, "Failed to create thread info");
+            return nullptr;
+        }
+        
         if (entry != thread_info_map.end())
             // Thread is already tracked so we update its info
-            entry->second = std::make_unique<ThreadInfo>(thread_id, native_id, thread_name);
+            entry->second = std::move(*maybe_thread_info);
         else
-            thread_info_map.emplace(
-                thread_id, std::make_unique<ThreadInfo>(thread_id, native_id, thread_name));
+            thread_info_map.emplace(thread_id, std::move(*maybe_thread_info));
     }
 
     Py_RETURN_NONE;
@@ -390,16 +430,14 @@ static PyObject* track_greenlet(PyObject* Py_UNUSED(m), PyObject* args)
 
     StringTable::Key greenlet_name;
 
-    try
-    {
-        greenlet_name = string_table.key(name);
-    }
-    catch (StringTable::Error&)
+    auto name_result = string_table.key(name);
+    if (!name_result)
     {
         // We failed to get this task but we keep going
         PyErr_SetString(PyExc_RuntimeError, "Failed to get greenlet name from the string table");
         return NULL;
     }
+    greenlet_name = *name_result;
     {
         const std::lock_guard<std::mutex> guard(greenlet_info_map_lock);
 

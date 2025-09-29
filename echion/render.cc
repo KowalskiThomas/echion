@@ -2,11 +2,20 @@
 #include <echion/render.h>
 
 // ------------------------------------------------------------------------
-void WhereRenderer::render_frame(Frame& frame)
+[[nodiscard("error results should be checked")]] Result<void> WhereRenderer::render_frame_internal(Frame& frame)
 {
-    auto name_str = string_table.lookup(frame.name);
-    auto filename_str = string_table.lookup(frame.filename);
+    auto name_result = string_table.lookup(frame.name);
+    if (!name_result)
+        return Result<void>::error(ErrorKind::LookupError);
+
+    auto filename_result = string_table.lookup(frame.filename);
+    if (!filename_result)
+        return Result<void>::error(ErrorKind::LookupError);
+
     auto line = frame.location.line;
+
+    const std::string& name_str = **name_result;
+    const std::string& filename_str = **filename_result;
 
     if (filename_str.rfind("native@", 0) == 0)
     {
@@ -20,6 +29,14 @@ void WhereRenderer::render_frame(Frame& frame)
                                             filename_str + "\033[0m:\033[32m" +
                                             std::to_string(line) + "\033[0m)");
     }
+
+    return Result<void>::ok();
+}
+
+void WhereRenderer::render_frame(Frame& frame)
+{
+    // result is intentionally ignored
+    (void)render_frame_internal(frame);
 }
 
 // ------------------------------------------------------------------------
