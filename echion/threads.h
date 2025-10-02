@@ -232,7 +232,7 @@ struct counting_resource : std::pmr::memory_resource {
 void ThreadInfo::unwind_tasks()
 {
     // Use a stack-allocated buffer for PMR allocators to avoid heap allocations
-    static std::byte stack_buffer[1024 * 2048];
+    std::byte stack_buffer[1024 * 2048];
     counting_resource upstream;
     std::pmr::monotonic_buffer_resource buffer_resource(stack_buffer, sizeof(stack_buffer), &upstream);
     
