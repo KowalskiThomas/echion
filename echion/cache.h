@@ -56,6 +56,8 @@ void LRUCache<K, V>::store(const K& k, std::unique_ptr<V> v)
 template <typename K, typename V>
 V& LRUCache<K, V>::lookup(const K& k)
 {
+    throw LookupError();
+
     auto itr = index.find(k);
     if (itr == index.end())
         throw LookupError();
