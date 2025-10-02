@@ -11,9 +11,12 @@
 #include <cstdint>
 #include <exception>
 #include <functional>
+#include <memory_resource>
 #include <mutex>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 #if defined PL_LINUX
 #include <time.h>
@@ -199,13 +202,44 @@ void ThreadInfo::unwind(PyThreadState* tstate)
     }
 }
 
+struct counting_resource : std::pmr::memory_resource {
+    std::pmr::memory_resource* upstream;
+    std::size_t allocs = 0, bytes = 0;
+  
+    explicit counting_resource(std::pmr::memory_resource* up = std::pmr::get_default_resource())
+      : upstream(up) {}
+  
+  private:
+    void* do_allocate(std::size_t n, std::size_t align) override {
+      ++allocs; bytes += n;
+    //   std::cerr << "OMG! We ARE TRYING TO ALLOCATE PLEASE STOP THE PROCESS!" << std::endl;
+    //   throw std::runtime_error("OMG! We ARE TRYING TO ALLOCATE PLEASE STOP THE PROCESS!");
+    std::cerr << "allocating " << n << " bytes, total:" << bytes << ", allocs:" << allocs << std::endl;
+      return upstream->allocate(n, align);
+    }
+    void do_deallocate(void* p, std::size_t n, std::size_t align) override {
+    //   std::cerr << "OMG! We ARE TRYING TO DEALLOCATE PLEASE STOP THE PROCESS!" << std::endl;
+    std::cerr << "deallocating " << n << " bytes" << std::endl;
+      upstream->deallocate(p, n, align);
+    }
+    bool do_is_equal(const std::pmr::memory_resource& other) const noexcept override {
+      return this == &other;
+    }
+  };
+  
+
 // ----------------------------------------------------------------------------
 void ThreadInfo::unwind_tasks()
 {
-    std::vector<TaskInfo::Ref> leaf_tasks;
-    std::unordered_set<PyObject*> parent_tasks;
-    std::unordered_map<PyObject*, TaskInfo::Ref> waitee_map;  // Indexed by task origin
-    std::unordered_map<PyObject*, TaskInfo::Ref> origin_map;  // Indexed by task origin
+    // Use a stack-allocated buffer for PMR allocators to avoid heap allocations
+    std::byte stack_buffer[1024 * 2048];
+    counting_resource upstream;
+    std::pmr::monotonic_buffer_resource buffer_resource(stack_buffer, sizeof(stack_buffer), &upstream);
+    
+    std::pmr::vector<TaskInfo::Ref> leaf_tasks(&buffer_resource);
+    std::pmr::unordered_set<PyObject*> parent_tasks(&buffer_resource);
+    std::pmr::unordered_map<PyObject*, TaskInfo::Ref> waitee_map(&buffer_resource);  // Indexed by task origin
+    std::pmr::unordered_map<PyObject*, TaskInfo::Ref> origin_map(&buffer_resource);  // Indexed by task origin
 
     auto all_tasks = get_all_tasks((PyObject*)asyncio_loop);
 
@@ -214,12 +248,12 @@ void ThreadInfo::unwind_tasks()
 
         // Clean up the task_link_map. Remove entries associated to tasks that
         // no longer exist.
-        std::unordered_set<PyObject*> all_task_origins;
+        std::pmr::unordered_set<PyObject*> all_task_origins(&buffer_resource);
         std::transform(all_tasks.cbegin(), all_tasks.cend(),
                        std::inserter(all_task_origins, all_task_origins.begin()),
                        [](const TaskInfo::Ptr& task) { return task->origin; });
 
-        std::vector<PyObject*> to_remove;
+        std::pmr::vector<PyObject*> to_remove(&buffer_resource);
         for (auto kv : task_link_map)
         {
             if (all_task_origins.find(kv.first) == all_task_origins.end())
@@ -488,10 +522,16 @@ void ThreadInfo::sample(int64_t iid, PyThreadState* tstate, microsecond_t delta)
     }
 }
 
+static size_t for_each_thread_runs = 0;
+static std::chrono::duration<unsigned long long, std::nano> for_each_thread_duration;
+
 // ----------------------------------------------------------------------------
 static void for_each_thread(InterpreterInfo& interp,
                             std::function<void(PyThreadState*, ThreadInfo&)> callback)
 {
+    for_each_thread_runs++;
+    auto start = std::chrono::high_resolution_clock::now();
+
     std::unordered_set<PyThreadState*> threads;
     std::unordered_set<PyThreadState*> seen_threads;
 
@@ -569,5 +609,14 @@ static void for_each_thread(InterpreterInfo& interp,
             // Call back with the thread state and thread info.
             callback(&tstate, *thread_info_map.find(tstate.thread_id)->second);
         }
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    for_each_thread_duration += end - start;
+
+    if (for_each_thread_runs % 1000 == 0) {
+        std::cout << "for_each_thread_runs:         " << for_each_thread_runs << std::endl;
+        std::cout << "for_each_thread_duration:     " << for_each_thread_duration.count() << std::endl;
+        std::cout << "avg for_each_thread_duration: " << for_each_thread_duration.count() / for_each_thread_runs << std::endl;
     }
 }
