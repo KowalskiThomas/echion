@@ -212,12 +212,14 @@ struct counting_resource : std::pmr::memory_resource {
   private:
     void* do_allocate(std::size_t n, std::size_t align) override {
       ++allocs; bytes += n;
-      std::cerr << "OMG! We ARE TRYING TO ALLOCATE PLEASE STOP THE PROCESS!" << std::endl;
-      throw std::runtime_error("OMG! We ARE TRYING TO ALLOCATE PLEASE STOP THE PROCESS!");
+    //   std::cerr << "OMG! We ARE TRYING TO ALLOCATE PLEASE STOP THE PROCESS!" << std::endl;
+    //   throw std::runtime_error("OMG! We ARE TRYING TO ALLOCATE PLEASE STOP THE PROCESS!");
+    std::cerr << "allocating " << n << " bytes, total:" << bytes << ", allocs:" << allocs << std::endl;
       return upstream->allocate(n, align);
     }
     void do_deallocate(void* p, std::size_t n, std::size_t align) override {
-      std::cerr << "OMG! We ARE TRYING TO DEALLOCATE PLEASE STOP THE PROCESS!" << std::endl;
+    //   std::cerr << "OMG! We ARE TRYING TO DEALLOCATE PLEASE STOP THE PROCESS!" << std::endl;
+    std::cerr << "deallocating " << n << " bytes" << std::endl;
       upstream->deallocate(p, n, align);
     }
     bool do_is_equal(const std::pmr::memory_resource& other) const noexcept override {
@@ -230,8 +232,7 @@ struct counting_resource : std::pmr::memory_resource {
 void ThreadInfo::unwind_tasks()
 {
     // Use a stack-allocated buffer for PMR allocators to avoid heap allocations
-    // 8KB should be sufficient for most profiling scenarios
-    std::byte stack_buffer[1024 * 50];
+    static std::byte stack_buffer[1024 * 2048];
     counting_resource upstream;
     std::pmr::monotonic_buffer_resource buffer_resource(stack_buffer, sizeof(stack_buffer), &upstream);
     
