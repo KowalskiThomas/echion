@@ -14,7 +14,7 @@
 
 // ----------------------------------------------------------------------------
 
-inline std::mutex sigprof_handler_lock;
+inline std::atomic<bool> profiling_complete{true};
 
 // ----------------------------------------------------------------------------
 void sigprof_handler([[maybe_unused]] int signum)
@@ -25,7 +25,7 @@ void sigprof_handler([[maybe_unused]] int signum)
     unwind_python_stack(current_tstate);
     // NOTE: Native stacks for tasks is non-trivial, so we skip it for now.
 
-    sigprof_handler_lock.unlock();
+    profiling_complete.store(true, std::memory_order_release);
 }
 
 // ----------------------------------------------------------------------------
