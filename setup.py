@@ -34,6 +34,8 @@ CFLAGS += ["-Wno-unused-function", "-Wno-unused-parameter", "-Wno-reorder"]
 if DISABLE_NATIVE:
     CFLAGS += ["-DUNWIND_NATIVE_DISABLE"]
 
+CFLAGS += ["-Wextra"]
+
 echionmodule = Extension(
     "echion.core",
     sources=[
