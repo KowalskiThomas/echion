@@ -140,11 +140,7 @@ TEST_F(TestStringUtils, TestPyUnicodeToUtf8Empty) {
     EXPECT_EQ(result.size(), 0);
 }
 
-#if PY_VERSION_HEX >= 0x030c0000 // 3.12.0
-TEST_F(TestStringUtils, DISABLED_TestPyUnicodeToUtf8Simple) {
-#else
 TEST_F(TestStringUtils, TestPyUnicodeToUtf8Simple) {
-#endif
     const char* test_str = "Hello, World!";
     PyObjectHandle str = PyUnicode_FromString(test_str);
     ASSERT_NE(str, nullptr);
@@ -155,11 +151,7 @@ TEST_F(TestStringUtils, TestPyUnicodeToUtf8Simple) {
     EXPECT_EQ(result.size(), 13);
 }
 
-#if PY_VERSION_HEX >= 0x030c0000 // 3.12.0
-TEST_F(TestStringUtils, DISABLED_TestPyUnicodeToUtf8ASCII) {
-#else
 TEST_F(TestStringUtils, TestPyUnicodeToUtf8ASCII) {
-#endif
     const char* test_str = "ASCII_string_123";
     PyObjectHandle str = PyUnicode_FromString(test_str);
     ASSERT_NE(str, nullptr);
@@ -169,11 +161,7 @@ TEST_F(TestStringUtils, TestPyUnicodeToUtf8ASCII) {
     EXPECT_EQ(result, test_str);
 }
 
-#if PY_VERSION_HEX >= 0x030c0000 // 3.12.0
-TEST_F(TestStringUtils, DISABLED_TestPyUnicodeToUtf8WithSpecialChars) {
-#else
 TEST_F(TestStringUtils, TestPyUnicodeToUtf8WithSpecialChars) {
-#endif
     const char* test_str = "test\nline\ttab";
     PyObjectHandle str = PyUnicode_FromString(test_str);
     ASSERT_NE(str, nullptr);
@@ -184,11 +172,7 @@ TEST_F(TestStringUtils, TestPyUnicodeToUtf8WithSpecialChars) {
     EXPECT_EQ(result.size(), 13);
 }
 
-#if PY_VERSION_HEX >= 0x030c0000 // 3.12.0
-TEST_F(TestStringUtils, DISABLED_TestPyUnicodeToUtf8MaxLength) {
-#else
 TEST_F(TestStringUtils, TestPyUnicodeToUtf8MaxLength) {
-#endif
     // Test at the boundary of max size (1024 chars)
     std::string test_str(1024, 'a');
     PyObjectHandle str = PyUnicode_FromString(test_str.c_str());
@@ -200,11 +184,7 @@ TEST_F(TestStringUtils, TestPyUnicodeToUtf8MaxLength) {
     EXPECT_EQ(result.size(), 1024);
 }
 
-#if PY_VERSION_HEX >= 0x030c0000 // 3.12.0
-TEST_F(TestStringUtils, DISABLED_TestPyUnicodeToUtf8FunctionName) {
-#else
 TEST_F(TestStringUtils, TestPyUnicodeToUtf8FunctionName) {
-#endif
     // Test typical function/class names
     const char* test_cases[] = {
         "__init__",
