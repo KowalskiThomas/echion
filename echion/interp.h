@@ -5,13 +5,18 @@
 #pragma once
 
 #define PY_SSIZE_T_CLEAN
+#define Py_BUILD_CORE
 #include <Python.h>
+#if PY_VERSION_HEX >= 0x030c0000
+// https://github.com/python/cpython/issues/108216#issuecomment-1696565797
+#undef _PyGC_FINALIZED
+#endif
 
 #if PY_VERSION_HEX >= 0x03090000
-#define Py_BUILD_CORE
 #if defined __GNUC__ && defined HAVE_STD_ATOMIC
 #undef HAVE_STD_ATOMIC
 #endif
+
 #include <internal/pycore_interp.h>
 #endif
 
@@ -29,25 +34,4 @@ public:
     void* next = NULL;
 };
 
-static void for_each_interp(std::function<void(InterpreterInfo& interp)> callback)
-{
-    InterpreterInfo interpreter_info = {0};
-
-    for (char* interp_addr = (char*)runtime->interpreters.head; interp_addr != NULL;
-         interp_addr = (char*)interpreter_info.next)
-    {
-        if (copy_type(interp_addr + offsetof(PyInterpreterState, id), interpreter_info.id))
-            continue;
-#if PY_VERSION_HEX >= 0x030b0000
-        if (copy_type(interp_addr + offsetof(PyInterpreterState, threads.head),
-#else
-        if (copy_type(interp_addr + offsetof(PyInterpreterState, tstate_head),
-#endif
-                      interpreter_info.tstate_head))
-            continue;
-        if (copy_type(interp_addr + offsetof(PyInterpreterState, next), interpreter_info.next))
-            continue;
-
-        callback(interpreter_info);
-    };
-}
+void for_each_interp(std::function<void(InterpreterInfo& interp)> callback);
