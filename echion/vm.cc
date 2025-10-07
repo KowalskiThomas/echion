@@ -7,7 +7,10 @@
 #include <algorithm>
 #include <cstdint>
 
+#include <cstdint>
+
 #if defined PL_LINUX
+
 void* VmReader::init(size_t new_sz)
 {
     // Makes a temporary file and ftruncates it to the specified size

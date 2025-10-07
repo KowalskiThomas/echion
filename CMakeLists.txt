@@ -29,7 +29,6 @@ else()
   message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
 endif()
 
-target_compile_options(echion PRIVATE -Wno-unused-function -Wno-unused-parameter -Wno-macro-redefined -Wno-reorder -Wextra -Wno-changes-meaning -Wall)
 
 include_directories(SYSTEM ${Python3_INCLUDE_DIRS})
 target_link_libraries(echion PUBLIC Python3::Python lzma)

@@ -129,13 +129,7 @@ TEST_F(TestStringTable, TestStringTableInitialisedWithCorrectValues) {
     ASSERT_EQ(string_table.at(2), "<unknown>");
 }
 
-#if PY_VERSION_HEX >= 0x030c0000 // 3.12.0
-TEST_F(TestStringTable, DISABLED_TestStringTableInsertPyObject) {
-#else
 TEST_F(TestStringTable, TestStringTableInsertPyObject) {
-#endif
-    // Disabled because the actual result is "\0\0\0\0"
-    
     auto py_string = PyObjectHandle(PyUnicode_FromString("test"));
 
     auto string_table = StringTable();
@@ -168,8 +162,7 @@ TEST_F(TestStringTable, TestStringTableInsertPyObjectFails) {
 }
 
 #if PY_VERSION_HEX >= 0x030c0000 // 3.12.0
-TEST_F(TestStringTable, DISABLED_TestStringTableLongErrorFallbackToUnicode) {
-    // Disabled because the actual result is "\0\0\0\0\0\0\0\0my_t"
+TEST_F(TestStringTable, TestStringTableLongErrorFallbackToUnicode) {
 
     // Test the LongError exception handling path in StringTable::key()
     // When a PyUnicode string is passed, pylong_to_llong() will throw LongError
@@ -190,6 +183,14 @@ TEST_F(TestStringTable, DISABLED_TestStringTableLongErrorFallbackToUnicode) {
     // Verify pyunicode_to_utf8 was called as fallback
     ASSERT_EQ(pyunicode_to_utf8_calls.size(), 1);
     ASSERT_EQ(pyunicode_to_utf8_calls[0], "my_task_name");
+}
+
+TEST_F(TestStringTable, TestStringTableKeyLong) {
+    auto py_long = PyObjectHandle(PyLong_FromLong(42));
+    auto string_table = StringTable();
+    const auto key = string_table.key(py_long);
+    ASSERT_EQ(string_table.size(), 4);
+    ASSERT_EQ(string_table.at(key), "Task-42");
 }
 #endif
 
