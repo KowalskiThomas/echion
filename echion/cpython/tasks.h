@@ -5,6 +5,7 @@
 #pragma once
 
 #define PY_SSIZE_T_CLEAN
+#define Py_BUILD_CORE
 #include <Python.h>
 
 #if PY_VERSION_HEX >= 0x030b0000

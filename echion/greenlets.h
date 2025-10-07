@@ -4,9 +4,13 @@
 
 #pragma once
 
-#include <Python.h>
 #define Py_BUILD_CORE
 
+#include <Python.h>
+#if PY_VERSION_HEX >= 0x030c0000
+// https://github.com/python/cpython/issues/108216#issuecomment-1696565797
+#undef _PyGC_FINALIZED
+#endif
 
 #include <echion/stacks.h>
 #include <echion/strings.h>
@@ -26,50 +30,11 @@ public:
     StringTable::Key name;
     PyObject* frame = NULL;
 
-    GreenletInfo(ID id, PyObject* frame, StringTable::Key name)
-        : greenlet_id(id), frame(frame), name(name)
-    {
-    }
+    GreenletInfo(ID id, PyObject* frame, StringTable::Key name);
 
     int unwind(PyObject*, PyThreadState*, FrameStack&);
 };
 
-// ----------------------------------------------------------------------------
-
-inline int GreenletInfo::unwind(PyObject* frame, PyThreadState* tstate, FrameStack& stack)
-{
-    PyObject* frame_addr = NULL;
-#if PY_VERSION_HEX >= 0x030d0000
-    frame_addr =
-        frame == Py_None
-            ? (PyObject*)tstate->current_frame
-            : reinterpret_cast<PyObject*>(reinterpret_cast<struct _frame*>(frame)->f_frame);
-#elif PY_VERSION_HEX >= 0x030b0000
-    if (frame == Py_None)
-    {
-        _PyCFrame cframe;
-        _PyCFrame* cframe_addr = tstate->cframe;
-        if (copy_type(cframe_addr, cframe))
-            // TODO: Invalid frame
-            return 0;
-
-        frame_addr = (PyObject*)cframe.current_frame;
-    }
-    else
-    {
-        frame_addr = reinterpret_cast<PyObject*>(reinterpret_cast<struct _frame*>(frame)->f_frame);
-    }
-
-#else  // Python < 3.11
-    frame_addr = frame == Py_None ? (PyObject*)tstate->frame : frame;
-#endif
-    auto count = unwind_frame(frame_addr, stack);
-
-    stack.push_back(Frame::get(name));
-
-    return count + 1;  // We add an extra count for the frame with the greenlet
-                       // name.
-}
 
 // ----------------------------------------------------------------------------
 
