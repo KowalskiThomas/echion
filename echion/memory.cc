@@ -38,7 +38,7 @@ void MemoryTable::link(void* address, FrameStack::Key stack, size_t size)
 {
     std::lock_guard<std::mutex> lock(this->lock);
 
-    this->emplace(address, (MemoryTableEntry){stack, size});
+    this->emplace(address, MemoryTableEntry{stack, size});
 }
 
 std::optional<MemoryTableEntry> MemoryTable::unlink(void* address)

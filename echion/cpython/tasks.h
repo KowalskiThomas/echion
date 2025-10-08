@@ -139,7 +139,7 @@ typedef enum
 
 typedef struct
 {
-    FutureObj_HEAD(fut)
+    FutureObj_HEAD(future)
 } FutureObj;
 
 #if PY_VERSION_HEX >= 0x030d0000
