@@ -1,5 +1,7 @@
 build/
 cmake_build/
+echion.cpp
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

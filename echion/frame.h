@@ -6,21 +6,28 @@
 
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
+
 #if defined __GNUC__ && defined HAVE_STD_ATOMIC
 #undef HAVE_STD_ATOMIC
 #endif
+
 #if PY_VERSION_HEX >= 0x030c0000
 // https://github.com/python/cpython/issues/108216#issuecomment-1696565797
 #undef _PyGC_FINALIZED
-#endif
-#include <frameobject.h>
-#if PY_VERSION_HEX >= 0x030d0000
+#endif // PY_VERSION_HEX >= 0x030c0000
+
+#define GEN_PY_VERSION(major, minor, micro) ((major << 24) | (minor << 16) | (micro << 8))
+
 #define Py_BUILD_CORE
+#if PY_VERSION_HEX >= 0x030d0000 // 3.13.0
 #include <internal/pycore_code.h>
 #endif  // PY_VERSION_HEX >= 0x030d0000
-#if PY_VERSION_HEX >= 0x030b0000
-#define Py_BUILD_CORE
+#if PY_VERSION_HEX >= 0x030b0000 // 3.11.0
 #include <internal/pycore_frame.h>
+#endif // PY_VERSION_HEX >= 0x030b0000
+
+#if PY_VERSION_HEX < GEN_PY_VERSION(3, 11, 0) // 3.11.0
+#include <frameobject.h>
 #endif
 
 #include <cstdint>
@@ -35,11 +42,12 @@
 #include <libunwind.h>
 #endif  // UNWIND_NATIVE_DISABLE
 
-#include <echion/cache.h>
-#include <echion/mojo.h>
 #if PY_VERSION_HEX >= 0x030b0000
 #include <echion/stack_chunk.h>
 #endif  // PY_VERSION_HEX >= 0x030b0000
+
+#include <echion/cache.h>
+#include <echion/mojo.h>
 #include <echion/strings.h>
 #include <echion/vm.h>
 
