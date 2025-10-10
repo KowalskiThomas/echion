@@ -314,6 +314,7 @@ inline Result<std::vector<TaskInfo::Ptr>> get_all_tasks(PyObject* loop)
 // ----------------------------------------------------------------------------
 
 inline std::vector<std::unique_ptr<StackInfo>> current_tasks;
+inline std::mutex current_tasks_lock;
 
 // ----------------------------------------------------------------------------
 

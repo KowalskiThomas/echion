@@ -347,7 +347,10 @@ inline Result<void> ThreadInfo::unwind_tasks()
         for (auto p = python_stack.begin(); p != python_stack.end(); p++)
             stack.push_back(*p);
 
-        current_tasks.push_back(std::move(stack_info));
+        {
+            const std::lock_guard<std::mutex> lock(current_tasks_lock);
+            current_tasks.push_back(std::move(stack_info));
+        }
     }
 
     return Result<void>::ok();
@@ -426,7 +429,10 @@ inline Result<void> ThreadInfo::unwind_greenlets(PyThreadState* tstate, unsigned
             greenlet_id = parent_greenlet_id;
         }
 
-        current_greenlets.push_back(std::move(stack_info));
+        {
+            const std::lock_guard<std::mutex> lock(current_greenlets_lock);
+            current_greenlets.push_back(std::move(stack_info));
+        }
     }
 
     return Result<void>::ok();
@@ -459,14 +465,26 @@ inline Result<void> ThreadInfo::sample(int64_t iid, PyThreadState* tstate, micro
         return Result<void>::error(ErrorKind::UnwindError);
     }
 
+    // Move tasks and greenlets to local storage to minimize lock contention
+    std::vector<std::unique_ptr<StackInfo>> local_tasks;
+    std::vector<std::unique_ptr<StackInfo>> local_greenlets;
+    {
+        const std::lock_guard<std::mutex> lock(current_tasks_lock);
+        local_tasks = std::move(current_tasks);
+    }
+    {
+        const std::lock_guard<std::mutex> lock(current_greenlets_lock);
+        local_greenlets = std::move(current_greenlets);
+    }
+
     // Asyncio tasks
-    if (current_tasks.empty())
+    if (local_tasks.empty())
     {
         // If we don't have any asyncio tasks, we check that we don't have any
         // greenlets either. In this case, we print the ordinary thread stack.
         // With greenlets, we recover the thread stack from the active greenlet,
         // so if we don't skip here we would have a double print.
-        if (current_greenlets.empty())
+        if (local_greenlets.empty())
         {
             // Print the PID and thread name
             Renderer::get().render_stack_begin(pid, iid, name);
@@ -489,7 +507,7 @@ inline Result<void> ThreadInfo::sample(int64_t iid, PyThreadState* tstate, micro
     }
     else
     {
-        for (auto& task_stack_info : current_tasks)
+        for (auto& task_stack_info : local_tasks)
         {
             auto maybe_task_name = string_table.lookup(task_stack_info->task_name);
             if (!maybe_task_name)
@@ -512,14 +530,12 @@ inline Result<void> ThreadInfo::sample(int64_t iid, PyThreadState* tstate, micro
 
             Renderer::get().render_stack_end(MetricType::Time, delta);
         }
-
-        current_tasks.clear();
     }
 
     // Greenlet stacks
-    if (!current_greenlets.empty())
+    if (!local_greenlets.empty())
     {
-        for (auto& greenlet_stack : current_greenlets)
+        for (auto& greenlet_stack : local_greenlets)
         {
             auto maybe_greenlet_name = string_table.lookup(greenlet_stack->task_name);
             if (!maybe_greenlet_name)
@@ -545,8 +561,6 @@ inline Result<void> ThreadInfo::sample(int64_t iid, PyThreadState* tstate, micro
 
             Renderer::get().render_stack_end(MetricType::Time, delta);
         }
-
-        current_greenlets.clear();
     }
 
     return Result<void>::ok();
