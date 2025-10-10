@@ -52,8 +52,8 @@ public:
 
     [[nodiscard]] static Result<std::unique_ptr<GenInfo>> create(PyObject* gen_addr);
 
-    GenInfo(PyObject* origin, PyObject* frame, std::unique_ptr<GenInfo> await, bool is_running)
-        : origin(origin), frame(frame), await(std::move(await)), is_running(is_running)
+    GenInfo(PyObject* origin_, PyObject* frame_, std::unique_ptr<GenInfo> await_, bool is_running_)
+        : origin(origin_), frame(frame_), await(std::move(await_)), is_running(is_running_)
     {
     }
 
@@ -65,18 +65,19 @@ private:
     GenInfo& operator=(const GenInfo&) = delete;
 };
 
-static inline size_t recursion_count = 0;
 
 [[nodiscard]] inline Result<std::unique_ptr<GenInfo>> GenInfo::create(PyObject* gen_addr)
 {
-    recursion_count++;
-    std::cerr << "Recursion count: " << recursion_count << std::endl;
+    static thread_local int depth = 0;
+    if (++depth > 24) { --depth; return Result<std::unique_ptr<GenInfo>>::error(ErrorKind::GenInfoError); }
+    // std::cerr << "Recursion count: " << depth << std::endl;
 
     // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     PyGenObject gen;
 
     if (copy_type(gen_addr, gen) || !PyCoro_CheckExact(&gen)) {
         // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
+        depth--;
         return Result<std::unique_ptr<GenInfo>>::error(ErrorKind::GenInfoError);
     }
 
@@ -101,6 +102,7 @@ static inline size_t recursion_count = 0;
     if (copy_type(frame, f))
     {
         // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
+        depth--;
         return Result<std::unique_ptr<GenInfo>>::error(ErrorKind::GenInfoError);
     }
 
@@ -121,9 +123,9 @@ static inline size_t recursion_count = 0;
 
 
         // THE CRASH SEEMS TO HAPPEN WHEN WE RECURSIVELY CALL GenInfo::create
-        // auto maybe_gen_info = GenInfo::create(yf);
         // Try to say it returned an error?
-        auto maybe_gen_info = Result<std::unique_ptr<GenInfo>>::error(ErrorKind::GenInfoError);
+        // auto maybe_gen_info = Result<std::unique_ptr<GenInfo>>::error(ErrorKind::GenInfoError);
+        auto maybe_gen_info = GenInfo::create(yf);
         if (maybe_gen_info) {
             // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
             await = std::move(*maybe_gen_info);
@@ -143,7 +145,7 @@ static inline size_t recursion_count = 0;
 #endif
 
     // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
-    recursion_count--;
+    depth--;
     return std::make_unique<GenInfo>(origin, frame, std::move(await), is_running);
 }
 

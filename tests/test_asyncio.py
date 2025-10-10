@@ -7,7 +7,7 @@ from tests.utils import run_target
 
 def test_asyncio_gather_wall_time():
     result, data = run_target("target_gather")
-    assert result.returncode == 0, result.stderr.decode()
+    assert result.returncode == -1234, (result.stderr.decode(), result.stdout.decode())
 
     md = data.metadata
     assert md["mode"] == "wall"

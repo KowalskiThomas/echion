@@ -101,7 +101,7 @@ class DataSummary:
 
 def run_echion(*args: str) -> CompletedProcess:
     try:
-        return run(
+        e = run(
             [
                 "echion",
                 *args,
@@ -110,6 +110,13 @@ def run_echion(*args: str) -> CompletedProcess:
             check=True,
             timeout=30,
         )
+        print("================================================")
+        print("Process failed:")
+        print("stdout", e.stdout.decode())
+        print("stderr", e.stderr.decode())
+        print("================================================")
+        return e
+
     except CalledProcessError as e:
         print("================================================")
         print("Process failed:")
