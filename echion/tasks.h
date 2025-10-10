@@ -210,7 +210,7 @@ inline std::mutex task_link_map_lock;
     // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
         
     // CRASH HERE
-    return Result<TaskInfo>::error(ErrorKind::TaskInfoError); // no crash until here????
+    // return Result<TaskInfo>::error(ErrorKind::TaskInfoError); // no crash until here????
 
     // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     auto coro = std::move(*maybe_coro);
@@ -305,7 +305,7 @@ inline Result<std::vector<TaskInfo::Ptr>> get_all_tasks(PyObject* loop)
 
         // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
         auto maybe_task = TaskInfo::create((TaskObj*)task_wr.wr_object);
-        continue;  // no crash until here
+        // continue;  // no crash until here
         if (maybe_task) {
             auto task = std::move(*maybe_task);
             // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
@@ -318,7 +318,7 @@ inline Result<std::vector<TaskInfo::Ptr>> get_all_tasks(PyObject* loop)
     }
 
     // crash if we return here
-    return Result<std::vector<TaskInfo::Ptr>>::error(ErrorKind::MirrorError);
+    // return Result<std::vector<TaskInfo::Ptr>>::error(ErrorKind::MirrorError);
 
     // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     if (asyncio_eager_tasks != NULL)
@@ -347,8 +347,8 @@ inline Result<std::vector<TaskInfo::Ptr>> get_all_tasks(PyObject* loop)
         }
     }
 
-    return Result<std::vector<TaskInfo::Ptr>>::error(ErrorKind::TaskInfoError);
-    // return tasks;
+    // return Result<std::vector<TaskInfo::Ptr>>::error(ErrorKind::TaskInfoError);
+    return tasks;
 }
 
 // ----------------------------------------------------------------------------
