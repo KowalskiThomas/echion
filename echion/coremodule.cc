@@ -86,7 +86,7 @@ static void where_listener()
 // ----------------------------------------------------------------------------
 static void setup_where()
 {
-    where_thread = new std::thread(where_listener);
+    // where_thread = new std::thread(where_listener);
 }
 
 static void teardown_where()
