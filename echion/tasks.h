@@ -219,8 +219,7 @@ inline Result<std::vector<TaskInfo::Ptr>> get_all_tasks(PyObject* loop)
 
     auto maybe_scheduled_tasks = maybe_scheduled_set->as_unordered_set();
     if (!maybe_scheduled_tasks)
-        return tasks;
-
+        return Result<std::vector<TaskInfo::Ptr>>::error(ErrorKind::MirrorError);
     for (auto task_wr_addr : *maybe_scheduled_tasks)
     {
         PyWeakReference task_wr;
