@@ -233,125 +233,130 @@ inline Result<void> ThreadInfo::unwind_tasks()
     std::unordered_map<PyObject*, TaskInfo::Ref> waitee_map;  // Indexed by task origin
     std::unordered_map<PyObject*, TaskInfo::Ref> origin_map;  // Indexed by task origin
 
+    if (asyncio_loop == NULL) {
+        std::cerr << __FILE__ << ":" << __LINE__ << "no asyncio loop" << std::endl;
+        return Result<void>::error(ErrorKind::TaskInfoError);
+    }
+
     auto maybe_all_tasks = get_all_tasks((PyObject*)asyncio_loop);
     if (!maybe_all_tasks) {
         return Result<void>::error(ErrorKind::TaskInfoError);
     }
 
-    auto all_tasks = std::move(*maybe_all_tasks);
-    {
-        std::lock_guard<std::mutex> lock(task_link_map_lock);
+    // auto all_tasks = std::move(*maybe_all_tasks);
+    // {
+    //     std::lock_guard<std::mutex> lock(task_link_map_lock);
 
-        // Clean up the task_link_map. Remove entries associated to tasks that
-        // no longer exist.
-        std::unordered_set<PyObject*> all_task_origins;
-        std::transform(all_tasks.cbegin(), all_tasks.cend(),
-                       std::inserter(all_task_origins, all_task_origins.begin()),
-                       [](const TaskInfo::Ptr& task) { return task->origin; });
+    //     // Clean up the task_link_map. Remove entries associated to tasks that
+    //     // no longer exist.
+    //     std::unordered_set<PyObject*> all_task_origins;
+    //     std::transform(all_tasks.cbegin(), all_tasks.cend(),
+    //                    std::inserter(all_task_origins, all_task_origins.begin()),
+    //                    [](const TaskInfo::Ptr& task) { return task->origin; });
 
-        std::vector<PyObject*> to_remove;
-        for (auto kv : task_link_map)
-        {
-            if (all_task_origins.find(kv.first) == all_task_origins.end())
-                to_remove.push_back(kv.first);
-        }
-        for (auto key : to_remove)
-            task_link_map.erase(key);
+    //     std::vector<PyObject*> to_remove;
+    //     for (auto kv : task_link_map)
+    //     {
+    //         if (all_task_origins.find(kv.first) == all_task_origins.end())
+    //             to_remove.push_back(kv.first);
+    //     }
+    //     for (auto key : to_remove)
+    //         task_link_map.erase(key);
 
-        // Determine the parent tasks from the gather links.
-        std::transform(task_link_map.cbegin(), task_link_map.cend(),
-                       std::inserter(parent_tasks, parent_tasks.begin()),
-                       [](const std::pair<PyObject*, PyObject*>& kv) { return kv.second; });
-    }
+    //     // Determine the parent tasks from the gather links.
+    //     std::transform(task_link_map.cbegin(), task_link_map.cend(),
+    //                    std::inserter(parent_tasks, parent_tasks.begin()),
+    //                    [](const std::pair<PyObject*, PyObject*>& kv) { return kv.second; });
+    // }
 
-    for (auto& task : all_tasks)
-    {
-        origin_map.emplace(task->origin, std::ref(*task));
+    // for (auto& task : all_tasks)
+    // {
+    //     origin_map.emplace(task->origin, std::ref(*task));
 
-        if (task->waiter != NULL)
-            waitee_map.emplace(task->waiter->origin, std::ref(*task));
-        else if (parent_tasks.find(task->origin) == parent_tasks.end())
-        {
-            if (cpu && ignore_non_running_threads && !task->coro->is_running)
-            {
-                // This task is not running, so we skip it if we are
-                // interested in just CPU time.
-                continue;
-            }
-            leaf_tasks.push_back(std::ref(*task));
-        }
-    }
+    //     if (task->waiter != NULL)
+    //         waitee_map.emplace(task->waiter->origin, std::ref(*task));
+    //     else if (parent_tasks.find(task->origin) == parent_tasks.end())
+    //     {
+    //         if (cpu && ignore_non_running_threads && !task->coro->is_running)
+    //         {
+    //             // This task is not running, so we skip it if we are
+    //             // interested in just CPU time.
+    //             continue;
+    //         }
+    //         leaf_tasks.push_back(std::ref(*task));
+    //     }
+    // }
 
-    for (auto& task : leaf_tasks)
-    {
-        bool on_cpu = task.get().coro->is_running;
-        auto stack_info = std::make_unique<StackInfo>(task.get().name, on_cpu);
-        auto& stack = stack_info->stack;
-        for (auto current_task = task;;)
-        {
-            auto& task = current_task.get();
+    // for (auto& task : leaf_tasks)
+    // {
+    //     bool on_cpu = task.get().coro->is_running;
+    //     auto stack_info = std::make_unique<StackInfo>(task.get().name, on_cpu);
+    //     auto& stack = stack_info->stack;
+    //     for (auto current_task = task;;)
+    //     {
+    //         auto& task = current_task.get();
 
-            size_t stack_size = task.unwind(stack);
+    //         size_t stack_size = task.unwind(stack);
 
-            if (on_cpu)
-            {
-                // Undo the stack unwinding
-                // TODO[perf]: not super-efficient :(
-                for (size_t i = 0; i < stack_size; i++)
-                    stack.pop_back();
+    //         if (on_cpu)
+    //         {
+    //             // Undo the stack unwinding
+    //             // TODO[perf]: not super-efficient :(
+    //             for (size_t i = 0; i < stack_size; i++)
+    //                 stack.pop_back();
 
-                // Instead we get part of the thread stack
-                FrameStack temp_stack;
-                size_t nframes =
-                    (python_stack.size() > stack_size) ? python_stack.size() - stack_size : 0;
-                for (size_t i = 0; i < nframes; i++)
-                {
-                    auto python_frame = python_stack.front();
-                    temp_stack.push_front(python_frame);
-                    python_stack.pop_front();
-                }
-                while (!temp_stack.empty())
-                {
-                    stack.push_front(temp_stack.front());
-                    temp_stack.pop_front();
-                }
-            }
+    //             // Instead we get part of the thread stack
+    //             FrameStack temp_stack;
+    //             size_t nframes =
+    //                 (python_stack.size() > stack_size) ? python_stack.size() - stack_size : 0;
+    //             for (size_t i = 0; i < nframes; i++)
+    //             {
+    //                 auto python_frame = python_stack.front();
+    //                 temp_stack.push_front(python_frame);
+    //                 python_stack.pop_front();
+    //             }
+    //             while (!temp_stack.empty())
+    //             {
+    //                 stack.push_front(temp_stack.front());
+    //                 temp_stack.pop_front();
+    //             }
+    //         }
 
-            // Add the task name frame
-            stack.push_back(*Frame::get(task.name));
+    //         // Add the task name frame
+    //         stack.push_back(*Frame::get(task.name));
 
-            // Get the next task in the chain
-            PyObject* task_origin = task.origin;
-            if (waitee_map.find(task_origin) != waitee_map.end())
-            {
-                current_task = waitee_map.find(task_origin)->second;
-                continue;
-            }
+    //         // Get the next task in the chain
+    //         PyObject* task_origin = task.origin;
+    //         if (waitee_map.find(task_origin) != waitee_map.end())
+    //         {
+    //             current_task = waitee_map.find(task_origin)->second;
+    //             continue;
+    //         }
 
-            {
-                // Check for, e.g., gather links
-                std::lock_guard<std::mutex> lock(task_link_map_lock);
+    //         {
+    //             // Check for, e.g., gather links
+    //             std::lock_guard<std::mutex> lock(task_link_map_lock);
 
-                if (task_link_map.find(task_origin) != task_link_map.end() &&
-                    origin_map.find(task_link_map[task_origin]) != origin_map.end())
-                {
-                    current_task = origin_map.find(task_link_map[task_origin])->second;
-                    continue;
-                }
-            }
+    //             if (task_link_map.find(task_origin) != task_link_map.end() &&
+    //                 origin_map.find(task_link_map[task_origin]) != origin_map.end())
+    //             {
+    //                 current_task = origin_map.find(task_link_map[task_origin])->second;
+    //                 continue;
+    //             }
+    //         }
 
-            break;
-        }
+    //         break;
+    //     }
 
-        // Finish off with the remaining thread stack
-        for (auto p = python_stack.begin(); p != python_stack.end(); p++)
-            stack.push_back(*p);
+    //     // Finish off with the remaining thread stack
+    //     for (auto p = python_stack.begin(); p != python_stack.end(); p++)
+    //         stack.push_back(*p);
 
-        {
-            const std::lock_guard<std::mutex> lock(current_tasks_lock);
-            current_tasks.push_back(std::move(stack_info));
-        }
-    }
+    //     {
+    //         const std::lock_guard<std::mutex> lock(current_tasks_lock);
+    //         current_tasks.push_back(std::move(stack_info));
+    //     }
+    // }
 
     return Result<void>::ok();
 }

@@ -50,7 +50,7 @@ public:
 
     bool is_running = false;
 
-    [[nodiscard]] static Result<GenInfo> create(PyObject* gen_addr);
+    [[nodiscard]] static Result<std::unique_ptr<GenInfo>> create(PyObject* gen_addr);
 
     GenInfo(PyObject* origin, PyObject* frame, std::unique_ptr<GenInfo> await, bool is_running)
         : origin(origin), frame(frame), await(std::move(await)), is_running(is_running)
@@ -65,14 +65,19 @@ private:
     GenInfo& operator=(const GenInfo&) = delete;
 };
 
-[[nodiscard]] inline Result<GenInfo> GenInfo::create(PyObject* gen_addr)
+static inline size_t recursion_count = 0;
+
+[[nodiscard]] inline Result<std::unique_ptr<GenInfo>> GenInfo::create(PyObject* gen_addr)
 {
+    recursion_count++;
+    std::cerr << "Recursion count: " << recursion_count << std::endl;
+
     // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     PyGenObject gen;
 
     if (copy_type(gen_addr, gen) || !PyCoro_CheckExact(&gen)) {
         // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
-        return Result<GenInfo>::error(ErrorKind::GenInfoError);
+        return Result<std::unique_ptr<GenInfo>>::error(ErrorKind::GenInfoError);
     }
 
     // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
@@ -89,25 +94,43 @@ private:
     auto frame = (PyObject*)gen.gi_frame;
 #endif
 
+    // NO CRASH HERE
+
     // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     PyFrameObject f;
     if (copy_type(frame, f))
     {
         // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
-        return Result<GenInfo>::error(ErrorKind::GenInfoError);
+        return Result<std::unique_ptr<GenInfo>>::error(ErrorKind::GenInfoError);
     }
 
+    // no crash until here
+
     PyObject* yf = (frame != NULL ? PyGen_yf(&gen, frame) : NULL);
+
+    // no crash until here
+
     std::unique_ptr<GenInfo> await = nullptr;
     if (yf != NULL && yf != gen_addr)
     {
+        // no crash if we return here        
+
         // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
-        auto maybe_gen_info = GenInfo::create(yf);
+
+        // return Result<std::unique_ptr<GenInfo>>::error(ErrorKind::GenInfoError); // no crash until here???
+
+
+        // THE CRASH SEEMS TO HAPPEN WHEN WE RECURSIVELY CALL GenInfo::create
+        // auto maybe_gen_info = GenInfo::create(yf);
+        // Try to say it returned an error?
+        auto maybe_gen_info = Result<std::unique_ptr<GenInfo>>::error(ErrorKind::GenInfoError);
         if (maybe_gen_info) {
             // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
-            await = std::make_unique<GenInfo>(std::move(*maybe_gen_info));
+            await = std::move(*maybe_gen_info);
         }
     }
+    
+    // crash here
 
     // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
 
@@ -120,7 +143,8 @@ private:
 #endif
 
     // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
-    return Result<GenInfo>(GenInfo(origin, frame, std::move(await), is_running));
+    recursion_count--;
+    return std::make_unique<GenInfo>(origin, frame, std::move(await), is_running);
 }
 
 // ----------------------------------------------------------------------------
@@ -176,6 +200,8 @@ inline std::mutex task_link_map_lock;
 
     // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
 
+    // NO CRASH HERE
+
     auto maybe_coro = GenInfo::create(task.task_coro);
     if (!maybe_coro) {
         // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
@@ -183,8 +209,11 @@ inline std::mutex task_link_map_lock;
     }
     // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
         
+    // CRASH HERE
+    return Result<TaskInfo>::error(ErrorKind::TaskInfoError); // no crash until here????
+
     // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
-    auto coro = std::make_unique<GenInfo>(std::move(*maybe_coro));
+    auto coro = std::move(*maybe_coro);
 
     // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     auto origin = (PyObject*)task_addr;
@@ -259,8 +288,12 @@ inline Result<std::vector<TaskInfo::Ptr>> get_all_tasks(PyObject* loop)
         return Result<std::vector<TaskInfo::Ptr>>::error(ErrorKind::MirrorError);
     }
     
+    auto scheduled_tasks = std::move(*maybe_scheduled_tasks);
+
+    // no crash until here
+
     // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
-    for (auto task_wr_addr : *maybe_scheduled_tasks)
+    for (auto task_wr_addr : scheduled_tasks)
     {
         // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
         PyWeakReference task_wr;
@@ -269,17 +302,23 @@ inline Result<std::vector<TaskInfo::Ptr>> get_all_tasks(PyObject* loop)
             continue;
         }
 
+
         // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
         auto maybe_task = TaskInfo::create((TaskObj*)task_wr.wr_object);
+        continue;  // no crash until here
         if (maybe_task) {
+            auto task = std::move(*maybe_task);
             // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
-            auto task_info = std::make_unique<TaskInfo>(std::move(*maybe_task));
+            auto task_info = std::make_unique<TaskInfo>(std::move(task));
             if (task_info->loop == loop)
                 tasks.push_back(std::move(task_info));
         }
 
         // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     }
+
+    // crash if we return here
+    return Result<std::vector<TaskInfo::Ptr>>::error(ErrorKind::MirrorError);
 
     // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     if (asyncio_eager_tasks != NULL)
@@ -308,7 +347,8 @@ inline Result<std::vector<TaskInfo::Ptr>> get_all_tasks(PyObject* loop)
         }
     }
 
-    return tasks;
+    return Result<std::vector<TaskInfo::Ptr>>::error(ErrorKind::TaskInfoError);
+    // return tasks;
 }
 
 // ----------------------------------------------------------------------------
