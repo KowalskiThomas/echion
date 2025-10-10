@@ -25,15 +25,21 @@ typedef unsigned short digit;
 #if PY_VERSION_HEX >= 0x030c0000
 [[nodiscard]] static Result<long long> pylong_to_llong(PyObject* long_addr)
 {
+auto file = __FILE__; auto line = __LINE__;
+// std::cerr << file << ":" << line << std::endl;
     // Only used to extract a task-id on Python 3.12, omits overflow checks
     PyLongObject long_obj;
     long long ret = 0;
 
-    if (copy_type(long_addr, long_obj))
+    if (copy_type(long_addr, long_obj)) {
+        // std::cerr << file << ":" << line << " OK" << std::endl;
         return Result<long long>::error(ErrorKind::PyLongError);
+    }
 
-    if (!PyLong_CheckExact(&long_obj))
+    if (!PyLong_CheckExact(&long_obj)) {
+        // std::cerr << file << ":" << line << " OK" << std::endl;
         return Result<long long>::error(ErrorKind::PyLongError);
+    }
 
     if (_PyLong_IsCompact(&long_obj))
     {
@@ -50,6 +56,7 @@ typedef unsigned short digit;
         std::vector<digit> digits(i);
         if (copy_generic(long_obj.long_value.ob_digit, digits.data(), i * sizeof(digit)))
         {
+            // std::cerr << file << ":" << line << " OK" << std::endl;
             return Result<long long>::error(ErrorKind::PyLongError);
         }
         while (--i >= 0)
@@ -59,6 +66,7 @@ typedef unsigned short digit;
         }
         ret *= sign;
     }
+// std::cerr << file << ":" << line << " OK" << std::endl;
 
     return Result<long long>(ret);
 }

@@ -67,35 +67,49 @@ private:
 
 [[nodiscard]] inline Result<GenInfo> GenInfo::create(PyObject* gen_addr)
 {
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     PyGenObject gen;
 
-    if (copy_type(gen_addr, gen) || !PyCoro_CheckExact(&gen))
+    if (copy_type(gen_addr, gen) || !PyCoro_CheckExact(&gen)) {
+        // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
         return Result<GenInfo>::error(ErrorKind::GenInfoError);
+    }
 
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     auto origin = gen_addr;
 
 #if PY_VERSION_HEX >= 0x030b0000
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     // The frame follows the generator object
     auto frame = (gen.gi_frame_state == FRAME_CLEARED)
                 ? NULL
                 : (PyObject*)((char*)gen_addr + offsetof(PyGenObject, gi_iframe));
 #else
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     auto frame = (PyObject*)gen.gi_frame;
 #endif
 
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     PyFrameObject f;
     if (copy_type(frame, f))
+    {
+        // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
         return Result<GenInfo>::error(ErrorKind::GenInfoError);
+    }
 
     PyObject* yf = (frame != NULL ? PyGen_yf(&gen, frame) : NULL);
     std::unique_ptr<GenInfo> await = nullptr;
     if (yf != NULL && yf != gen_addr)
     {
+        // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
         auto maybe_gen_info = GenInfo::create(yf);
         if (maybe_gen_info) {
+            // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
             await = std::make_unique<GenInfo>(std::move(*maybe_gen_info));
         }
     }
+
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
 
 #if PY_VERSION_HEX >= 0x030b0000
     auto is_running = (gen.gi_frame_state == FRAME_EXECUTING);
@@ -105,6 +119,7 @@ private:
     auto is_running = gen.gi_running;
 #endif
 
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     return Result<GenInfo>(GenInfo(origin, frame, std::move(await), is_running));
 }
 
@@ -151,25 +166,38 @@ inline std::mutex task_link_map_lock;
 // ----------------------------------------------------------------------------
 [[nodiscard]] inline Result<TaskInfo> TaskInfo::create(TaskObj* task_addr)
 {
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     TaskObj task;
-    
-    if (copy_type(task_addr, task))
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
+    if (copy_type(task_addr, task)){
+        // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
         return Result<TaskInfo>::error(ErrorKind::TaskInfoError);
+    }
+
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
 
     auto maybe_coro = GenInfo::create(task.task_coro);
-    if (!maybe_coro)
+    if (!maybe_coro) {
+        // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
         return Result<TaskInfo>::error(ErrorKind::TaskInfoError);
+    }
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
         
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     auto coro = std::make_unique<GenInfo>(std::move(*maybe_coro));
 
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     auto origin = (PyObject*)task_addr;
 
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     auto maybe_name = string_table.key(task.task_name);
     if (!maybe_name)
         return Result<TaskInfo>::error(ErrorKind::TaskInfoError);
 
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     auto loop = task.task_loop;
 
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     std::unique_ptr<TaskInfo> waiter = nullptr;
     if (task.task_fut_waiter)
     {
@@ -180,6 +208,7 @@ inline std::mutex task_link_map_lock;
         }
     }
     
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     return Result<TaskInfo>(TaskInfo(origin, loop, std::move(coro), *maybe_name, std::move(waiter)));
 }
 
@@ -208,32 +237,51 @@ inline std::mutex task_link_map_lock;
 // TODO: Make this a "for_each_task" function?
 inline Result<std::vector<TaskInfo::Ptr>> get_all_tasks(PyObject* loop)
 {
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     std::vector<TaskInfo::Ptr> tasks;
-    if (loop == NULL)
+    if (loop == NULL) {
+        // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
         return tasks;
+    }
 
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     auto maybe_scheduled_set = MirrorSet::create(asyncio_scheduled_tasks);
     if (!maybe_scheduled_set) {
+        // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
         return Result<std::vector<TaskInfo::Ptr>>::error(ErrorKind::MirrorError);
     }
 
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     auto maybe_scheduled_tasks = maybe_scheduled_set->as_unordered_set();
     if (!maybe_scheduled_tasks)
+    {
+        // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
         return Result<std::vector<TaskInfo::Ptr>>::error(ErrorKind::MirrorError);
+    }
+    
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     for (auto task_wr_addr : *maybe_scheduled_tasks)
     {
+        // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
         PyWeakReference task_wr;
-        if (copy_type(task_wr_addr, task_wr))
+        if (copy_type(task_wr_addr, task_wr)) {
+            // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
             continue;
+        }
 
+        // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
         auto maybe_task = TaskInfo::create((TaskObj*)task_wr.wr_object);
         if (maybe_task) {
+            // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
             auto task_info = std::make_unique<TaskInfo>(std::move(*maybe_task));
             if (task_info->loop == loop)
                 tasks.push_back(std::move(task_info));
         }
+
+        // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     }
 
+    // std::cerr << __FILE__ << ":" << __LINE__ << std::endl;
     if (asyncio_eager_tasks != NULL)
     {
         auto maybe_eager_set = MirrorSet::create(asyncio_eager_tasks);

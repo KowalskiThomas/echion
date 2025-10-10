@@ -46,9 +46,12 @@ public:
         for (auto it = this->rbegin(); it != this->rend(); ++it)
         {
 #if PY_VERSION_HEX >= 0x030c0000
+auto file = __FILE__; auto line = __LINE__;
+// std::cerr << file << ":" << line << std::endl;
             if ((*it).get().is_entry)
                 // This is a shim frame so we skip it.
                 continue;
+// std::cerr << file << ":" << line << " OK" << std::endl;
 #endif
             Renderer::get().render_frame((*it).get());
         }
@@ -60,9 +63,12 @@ public:
         for (auto it = this->rbegin(); it != this->rend(); ++it)
         {
 #if PY_VERSION_HEX >= 0x030c0000
+auto file = __FILE__; auto line = __LINE__;
+// std::cerr << file << ":" << line << std::endl;
             if ((*it).get().is_entry)
                 // This is a shim frame so we skip it.
                 continue;
+// std::cerr << file << ":" << line << " OK" << std::endl;
 #endif
             WhereRenderer::get().render_frame((*it).get());
         }

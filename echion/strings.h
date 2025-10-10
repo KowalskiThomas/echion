@@ -95,6 +95,8 @@ public:
         if (this->find(k) == this->end())
         {
 #if PY_VERSION_HEX >= 0x030c0000
+auto file = __FILE__; auto line = __LINE__;
+// std::cerr << file << ":" << line << std::endl;
             // The task name might hold a PyLong for deferred task name formatting.
             std::string str = "Task-";
             
@@ -112,6 +114,7 @@ public:
 
                 str = *maybe_unicode;
             }
+// std::cerr << file << ":" << line << " OK" << std::endl;
 #else
             auto maybe_unicode = pyunicode_to_utf8(s);
             if (!maybe_unicode) {
@@ -137,9 +140,12 @@ public:
         if (this->find(k) == this->end())
         {
 #if PY_VERSION_HEX >= 0x030c0000
+auto file = __FILE__; auto line = __LINE__;
+// std::cerr << file << ":" << line << std::endl;
             // The task name might hold a PyLong for deferred task name formatting.
             auto str = (PyLong_CheckExact(s)) ? "Task-" + std::to_string(PyLong_AsLong(s))
                                               : std::string(PyUnicode_AsUTF8(s));
+// std::cerr << file << ":" << line << " OK" << std::endl;
 #else
             auto str = std::string(PyUnicode_AsUTF8(s));
 #endif
