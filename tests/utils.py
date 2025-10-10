@@ -111,8 +111,11 @@ def run_echion(*args: str) -> CompletedProcess:
             timeout=30,
         )
     except CalledProcessError as e:
-        print(e.stdout.decode())
-        print(e.stderr.decode())
+        print("================================================")
+        print("Process failed:")
+        print("stdout", e.stdout.decode())
+        print("stderr", e.stderr.decode())
+        print("================================================")
         raise
 
 
