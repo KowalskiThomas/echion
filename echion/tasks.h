@@ -62,8 +62,14 @@ public:
     GenInfo(PyObject* gen_addr);
 };
 
+static inline size_t max_recursion_depth = 0;
+
+
 inline GenInfo::GenInfo(PyObject* gen_addr)
 {
+    max_recursion_depth++;
+    auto recursion_depth = max_recursion_depth;
+
     PyGenObject gen;
 
     if (copy_type(gen_addr, gen) || !PyCoro_CheckExact(&gen))
@@ -90,6 +96,10 @@ inline GenInfo::GenInfo(PyObject* gen_addr)
         try
         {
             await = std::make_unique<GenInfo>(yf);
+            if (max_recursion_depth && recursion_depth+1 == max_recursion_depth) {
+                std::cerr << "Max recursion depth was " << max_recursion_depth << std::endl;
+                max_recursion_depth = 0;
+            }
         }
         catch (GenInfo::Error&)
         {
