@@ -63,17 +63,59 @@ public:
 };
 
 static inline size_t max_recursion_depth = 0;
+static constexpr const size_t max_allowed_recursion_depth = 100;
+static inline PyObject* call_history[max_allowed_recursion_depth];
+static inline size_t call_history_index = 0;
+static inline size_t current_recursion_depth = 0;
+#include <execinfo.h>
 
+
+void printBacktrace() {
+    void* callstack[128];
+    int frames = backtrace(callstack, 128);
+    char** symbols = backtrace_symbols(callstack, frames);
+
+    std::cerr << "Backtrace:\n";
+    for (int i = 0; i < frames; ++i)
+        std::cerr << symbols[i] << '\n';
+
+    free(symbols);
+}
 
 inline GenInfo::GenInfo(PyObject* gen_addr)
 {
-    max_recursion_depth++;
-    auto recursion_depth = max_recursion_depth;
+    current_recursion_depth++;
+    std::cerr << "Current recursion depth: " << current_recursion_depth << std::endl;
+
+    // struct CallHistory {
+    //     ~CallHistory() {
+    //         // std::cerr << "Exiting depth: " << current_recursion_depth << std::endl;
+    //         current_recursion_depth--;
+    //     }
+    // } _call_history;
+
+    if (current_recursion_depth > max_allowed_recursion_depth) {
+        std::cerr << "Max recursion depth reached for generator " << gen_addr << " at depth " << current_recursion_depth << ". Aborting." << std::endl;
+        // printBacktrace();
+
+        // std::cerr << "Call history: ";
+        // for (size_t i = 0; i < call_history_index; i++) {
+        //     std::cerr << (call_history[i] ? Py_TYPE(call_history[i])->tp_name : "NULL") << " ";
+        // }
+        // std::cerr << std::endl;
+        current_recursion_depth--;
+        throw std::logic_error("Max recursion depth reached");
+    }
+
+    call_history[call_history_index] = gen_addr;
+    call_history_index++;
 
     PyGenObject gen;
 
-    if (copy_type(gen_addr, gen) || !PyCoro_CheckExact(&gen))
+    if (copy_type(gen_addr, gen) || !PyCoro_CheckExact(&gen)) {
+        current_recursion_depth--;
         throw Error();
+    }
 
     origin = gen_addr;
 
@@ -87,8 +129,10 @@ inline GenInfo::GenInfo(PyObject* gen_addr)
 #endif
 
     PyFrameObject f;
-    if (copy_type(frame, f))
+    if (copy_type(frame, f)) {
+        current_recursion_depth--;
         throw Error();
+    }
 
     PyObject* yf = (frame != NULL ? PyGen_yf(&gen, frame) : NULL);
     if (yf != NULL && yf != gen_addr)
@@ -96,15 +140,13 @@ inline GenInfo::GenInfo(PyObject* gen_addr)
         try
         {
             await = std::make_unique<GenInfo>(yf);
-            if (max_recursion_depth && recursion_depth+1 == max_recursion_depth) {
-                std::cerr << "Max recursion depth was " << max_recursion_depth << std::endl;
-                max_recursion_depth = 0;
-            }
         }
         catch (GenInfo::Error&)
         {
             await = nullptr;
         }
+    } else {
+        std::cerr << "No await found for generator " << gen_addr << std::endl;
     }
 
 #if PY_VERSION_HEX >= 0x030b0000
@@ -114,6 +156,8 @@ inline GenInfo::GenInfo(PyObject* gen_addr)
 #else
     is_running = gen.gi_running;
 #endif
+
+    current_recursion_depth--;
 }
 
 // ----------------------------------------------------------------------------
