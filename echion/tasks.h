@@ -65,12 +65,37 @@ private:
     GenInfo& operator=(const GenInfo&) = delete;
 };
 
+static thread_local inline size_t recursion_depth = 0;
+static thread_local constexpr const size_t max_allowed_recursion_depth = 100;
+// static thread_local PyObject* stack[max_allowed_recursion_depth];
+
 [[nodiscard]] inline Result<GenInfo> GenInfo::create(PyObject* gen_addr)
 {
+    recursion_depth++;
+    // assert(recursion_depth >= 1);
+    if (recursion_depth > max_allowed_recursion_depth) {
+        std::cerr << "Max recursion depth reached for generator " << gen_addr << " at depth " << recursion_depth << ". Aborting." << std::endl;
+        for (size_t i = 0; i < recursion_depth; i++) {
+            // PyObject* py_str_obj = PyObject_Str(stack[i]);
+            // const char* c_str = py_str_obj ? PyUnicode_AsUTF8(py_str_obj) : "(error in __str__)";
+            // auto desc = (c_str ? c_str : "(error in PyUnicode_AsUTF8)");
+
+            // std::cerr
+            //     << "Stack[" << i << "]: " << stack[i]
+            //     // << " " << desc
+            //     << std::endl;
+            // Py_DECREF(py_str_obj);
+
+        }
+        throw std::logic_error("Max recursion depth reached");
+    }
     PyGenObject gen;
 
-    if (copy_type(gen_addr, gen) || !PyCoro_CheckExact(&gen))
+    if (copy_type(gen_addr, gen) || !PyCoro_CheckExact(&gen)){
+        recursion_depth--;
+        // if (recursion_depth == 0) stack_index = 0;
         return Result<GenInfo>::error(ErrorKind::GenInfoError);
+    }
 
     auto origin = gen_addr;
 
@@ -84,8 +109,11 @@ private:
 #endif
 
     PyFrameObject f;
-    if (copy_type(frame, f))
+    if (copy_type(frame, f)) {
+        recursion_depth--;
+        // if (recursion_depth == 0) stack_index = 0;
         return Result<GenInfo>::error(ErrorKind::GenInfoError);
+    }
 
     PyObject* yf = (frame != NULL ? PyGen_yf(&gen, frame) : NULL);
     std::unique_ptr<GenInfo> await = nullptr;
@@ -105,6 +133,8 @@ private:
     auto is_running = gen.gi_running;
 #endif
 
+    recursion_depth--;
+    // if (recursion_depth == 0) stack_index = 0;
     return Result<GenInfo>(GenInfo(origin, frame, std::move(await), is_running));
 }
 
