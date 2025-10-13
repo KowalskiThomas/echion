@@ -6,6 +6,10 @@
 
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
+#if PY_VERSION_HEX >= 0x030c0000
+// https://github.com/python/cpython/issues/108216#issuecomment-1696565797
+#undef _PyGC_FINALIZED
+#endif
 
 #include <mutex>
 #include <csignal>
@@ -14,43 +18,16 @@
 #include <echion/state.h>
 
 // ----------------------------------------------------------------------------
-
 inline std::mutex sigprof_handler_lock;
 
 // ----------------------------------------------------------------------------
-inline void sigprof_handler([[maybe_unused]] int signum)
-{
-#ifndef UNWIND_NATIVE_DISABLE
-    unwind_native_stack();
-#endif  // UNWIND_NATIVE_DISABLE
-    unwind_python_stack(current_tstate);
-    // NOTE: Native stacks for tasks is non-trivial, so we skip it for now.
-
-    sigprof_handler_lock.unlock();
-}
+void sigprof_handler([[maybe_unused]] int signum);
 
 // ----------------------------------------------------------------------------
-inline void sigquit_handler([[maybe_unused]] int signum)
-{
-    // Wake up the where thread
-    std::lock_guard<std::mutex> lock(where_lock);
-    where_cv.notify_one();
-}
+void sigquit_handler([[maybe_unused]] int signum);
 
 // ----------------------------------------------------------------------------
-inline void install_signals()
-{
-    signal(SIGQUIT, sigquit_handler);
-
-    if (native)
-        signal(SIGPROF, sigprof_handler);
-}
+void install_signals();
 
 // ----------------------------------------------------------------------------
-inline void restore_signals()
-{
-    signal(SIGQUIT, SIG_DFL);
-
-    if (native)
-        signal(SIGPROF, SIG_DFL);
-}
+void restore_signals();

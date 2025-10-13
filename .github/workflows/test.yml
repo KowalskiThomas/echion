@@ -1,0 +1,67 @@
+name: Unit Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  unit-test-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13']
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        sudo apt remove -y man-db
+        sudo apt-get update
+        sudo apt-get install -y liblzma-dev
+        sudo -E bash scripts/build_libunwind.sh
+    
+    - name: Configure CMake
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=Release \
+          -DPython3_EXECUTABLE="python${{ matrix.python-version }}"
+    
+    - name: Build
+      run: cmake --build build -j$(nproc)
+    
+    - name: Run tests
+      run: cd build && ctest --output-on-failure
+
+  # TODO: for the time being, we don't run tests on macOS because interposition
+  #       doesn't work the same way as on Linux (and I wasn't able to make it work)
+  # unit-test-macos:
+  #   runs-on: macos-latest
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       python-version: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13']
+    
+  #   steps:
+  #   - uses: actions/checkout@v4
+
+  #   - uses: actions/setup-python@v5
+  #     with:
+  #       python-version: ${{ matrix.python-version }}
+    
+  #   - name: Configure CMake
+  #     run: |
+  #       cmake -B build -DCMAKE_BUILD_TYPE=Release \
+  #         -DPython3_EXECUTABLE="python${{ matrix.python-version }}"
+    
+  #   - name: Build
+  #     run: cmake --build build -j$(nproc)
+    
+  #   - name: Run tests
+  #     run: cd build && ctest --output-on-failure

@@ -9,6 +9,12 @@
 #include <memory>
 #include <unordered_map>
 
+#include <Python.h>
+#if PY_VERSION_HEX >= 0x030c0000
+// https://github.com/python/cpython/issues/108216#issuecomment-1696565797
+#undef _PyGC_FINALIZED
+#endif
+
 #define CACHE_MAX_ENTRIES 2048
 
 template <typename K, typename V>

@@ -11,6 +11,12 @@
 #include <ostream>
 #include <string_view>
 
+#include <Python.h>
+#if PY_VERSION_HEX >= 0x030c0000
+// https://github.com/python/cpython/issues/108216#issuecomment-1696565797
+#undef _PyGC_FINALIZED
+#endif
+
 #include <echion/config.h>
 #include <echion/mojo.h>
 #include <echion/timing.h>

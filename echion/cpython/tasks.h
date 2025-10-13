@@ -4,27 +4,41 @@
 
 #pragma once
 
-#define PY_SSIZE_T_CLEAN
-#include <Python.h>
-
-#if PY_VERSION_HEX >= 0x030b0000
-#include <cpython/genobject.h>
-
-#define Py_BUILD_CORE
-#if PY_VERSION_HEX >= 0x030d0000
-#include <opcode.h>
-#else
-#include <internal/pycore_opcode.h>
-#include <internal/pycore_frame.h>
-#endif  // PY_VERSION_HEX >= 0x030d0000
-#else
-#include <genobject.h>
-#include <opcode.h>
-#endif
-
 #include <memory>
 
+#define PY_SSIZE_T_CLEAN
+#define Py_BUILD_CORE
+#include <Python.h>
+
+#if PY_VERSION_HEX >= 0x030b0000 // 3.11.0
+    #include <cpython/genobject.h>
+
+    #if PY_VERSION_HEX >= 0x030d0000 // 3.13.0
+        #include <opcode.h>
+    #else // PY_VERSION_HEX >= 0x030d0000 // 3.13.0
+        #include <internal/pycore_opcode.h>
+        #include <internal/pycore_frame.h>
+    #endif  // PY_VERSION_HEX >= 0x030d0000
+#else // PY_VERSION_HEX >= 0x030b0000 // 3.11.0
+    #include <genobject.h>
+    #include <opcode.h>
+#endif // PY_VERSION_HEX >= 0x030b0000 // 3.11.0
+
+#define Py_BUILD_CORE
+#if PY_VERSION_HEX >= 0x030d0000 // 3.13.0
+#include <internal/pycore_code.h>
+#endif  // PY_VERSION_HEX >= 0x030d0000
+#if PY_VERSION_HEX >= 0x030b0000 // 3.11.0
+#include <internal/pycore_frame.h>
+#endif // PY_VERSION_HEX >= 0x030b0000
+
+#define GEN_PY_VERSION(major, minor, micro) ((major << 24) | (minor << 16) | (micro << 8))
+#if PY_VERSION_HEX < GEN_PY_VERSION(3, 11, 0) // 3.11.0
+#include <frameobject.h>
+#endif
+
 #include <echion/vm.h>
+#include <echion/strings.h>
 
 extern "C" {
 
