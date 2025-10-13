@@ -65,12 +65,48 @@ private:
     GenInfo& operator=(const GenInfo&) = delete;
 };
 
+inline volatile size_t excess_count = 0;
+
 [[nodiscard]] inline Result<GenInfo> GenInfo::create(PyObject* gen_addr)
 {
+    volatile static size_t call_count = 0;
+    volatile static size_t recursion_depth = 0;
+
+    recursion_depth++;
+    if (recursion_depth == 1) {
+        call_count++;
+        (void)call_count;
+    }
+
+    if (recursion_depth > 256) {
+        excess_count++;
+        return Result<GenInfo>::error(ErrorKind::GenInfoError);
+    }
+
+    // if (recursion_depth > 16 && recursion_depth < 20) {
+    //     PyGILState_STATE gstate = PyGILState_Ensure();
+
+    //     PyObject *str_obj = PyObject_Str(gen_addr);
+
+    //     // Convert the Python unicode object to a C string
+    //     const char *c_str = str_obj ? PyUnicode_AsUTF8(str_obj) : "(__str__ error)";
+    //     c_str = c_str ? c_str : "unicode_as_utf8 error";
+
+    //     strcpy(gen_name, c_str);
+
+    //     if (str_obj)
+    //         Py_DECREF(str_obj);
+        
+    //     PyGILState_Release(gstate);
+    // }
+
+
     PyGenObject gen;
 
-    if (copy_type(gen_addr, gen) || !PyCoro_CheckExact(&gen))
+    if (copy_type(gen_addr, gen) || !PyCoro_CheckExact(&gen)) {
+        recursion_depth--;
         return Result<GenInfo>::error(ErrorKind::GenInfoError);
+    } 
 
     auto origin = gen_addr;
 
@@ -84,8 +120,10 @@ private:
 #endif
 
     PyFrameObject f;
-    if (copy_type(frame, f))
+    if (copy_type(frame, f)) {
+        recursion_depth--;
         return Result<GenInfo>::error(ErrorKind::GenInfoError);
+    }
 
     PyObject* yf = (frame != NULL ? PyGen_yf(&gen, frame) : NULL);
     std::unique_ptr<GenInfo> await = nullptr;
@@ -105,6 +143,7 @@ private:
     auto is_running = gen.gi_running;
 #endif
 
+    recursion_depth--;
     return Result<GenInfo>(GenInfo(origin, frame, std::move(await), is_running));
 }
 

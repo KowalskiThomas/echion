@@ -276,6 +276,8 @@ static PyObject* start(PyObject* Py_UNUSED(m), PyObject* Py_UNUSED(args))
     Py_RETURN_NONE;
 }
 
+extern volatile size_t excess_count;
+
 // ----------------------------------------------------------------------------
 static PyObject* stop(PyObject* Py_UNUSED(m), PyObject* Py_UNUSED(args))
 {
@@ -288,6 +290,10 @@ static PyObject* stop(PyObject* Py_UNUSED(m), PyObject* Py_UNUSED(args))
         sampler_thread = nullptr;
     }
 
+    if (excess_count) {
+        std::cerr << "excess count: " << excess_count << std::endl;
+    }
+    
     Py_RETURN_NONE;
 }
 

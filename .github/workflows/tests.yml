@@ -51,11 +51,26 @@ jobs:
           sudo echo "core.%p" | sudo tee /proc/sys/kernel/core_pattern
           sudo -E env PATH="$PATH" bash -c 'ECHION_ALT_VM_READ_FORCE=${{ matrix.echion-alt-vm-force }} ulimit -c unlimited && hatch run tests.py${{ matrix.python-version }}:tests -svv'
 
+      - name: Fix core permissions
+        run: |
+          sudo echo "Updating permissions!"
+          ls /home/runner/work/echion/echion/core.*
+          sudo chown $USER:$USER /home/runner/work/echion/echion/core.*
+        if: always()
+
       - name: Upload profiles
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: profiles-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.echion-alt-vm-force }}
           path: profiles/
+          overwrite: true
+        if: always()
+
+      - name: Upload cores
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cores-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.echion-alt-vm-force }}
+          path: core.*
           overwrite: true
         if: always()
 
