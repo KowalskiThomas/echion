@@ -172,41 +172,70 @@ typedef struct
 #endif
 
 #if PY_VERSION_HEX >= 0x030b0000
+
+// ---- config ---------------------------------------------------------------
+// If your fork differs from upstream semantics, define this to 1 or 0 in your build:
+//   - 1 => frame.stacktop is the *index of TOS*
+//   - 0 => frame.stacktop is the *depth* (so TOS = stacktop - 1)
+#ifndef DD_STACKTOP_IS_TOS
+  // Heuristic based on upstream: 3.13+ treats stacktop as TOS index.
+  #if PY_VERSION_HEX >= 0x030D0000  // 3.13.0
+    #define DD_STACKTOP_IS_TOS 1
+  #else
+    #define DD_STACKTOP_IS_TOS 0
+  #endif
+#endif
+// --------------------------------------------------------------------------
+
+// Return false if we can't safely compute a TOS address.
+static inline bool
+dd_get_tos_addr(const _PyInterpreterFrame& f, const PyObject*** addr_out)
+{
+    if (!addr_out) return false;
+    *addr_out = nullptr;
+
+    // localsplus can be null in some transient/cleared states
+    if (!f.localsplus) return false;
+
+#if DD_STACKTOP_IS_TOS
+    // stacktop is the index of TOS
+    if (f.stacktop < 0) return false;
+    *addr_out = reinterpret_cast<const PyObject**>(f.localsplus + f.stacktop);
+#else
+    // stacktop is the count (depth); TOS = stacktop - 1
+    if (f.stacktop <= 0) return false;  // empty stack => no TOS
+    *addr_out = reinterpret_cast<const PyObject**>(f.localsplus + (f.stacktop - 1));
+#endif
+
+    return true;
+}
+
+// Minimal, deterministic version: no opcode probing, no double-guessing.
 inline PyObject* PyGen_yf(PyGenObject* gen, PyObject* frame_addr)
 {
-    PyObject* yf = NULL;
-
-    if (gen->gi_frame_state < FRAME_CLEARED)
-    {
-        if (gen->gi_frame_state == FRAME_CREATED)
-            return NULL;
-
-        _PyInterpreterFrame frame;
-        if (copy_type(frame_addr, frame))
-            return NULL;
-
-        _Py_CODEUNIT next;
-#if PY_VERSION_HEX >= 0x030d0000
-        if (copy_type(frame.instr_ptr, next))
-#else
-        if (copy_type(frame.prev_instr + 1, next))
-#endif
-            return NULL;
-        if (!(_Py_OPCODE(next) == RESUME || _Py_OPCODE(next) == RESUME_QUICK) ||
-            _Py_OPARG(next) < 2)
-            return NULL;
-
-        if (frame.stacktop < 1 || frame.stacktop > (1 << 20))
-            return NULL;
-
-        auto localsplus = std::make_unique<PyObject*[]>(frame.stacktop);
-        if (copy_generic(frame.localsplus, localsplus.get(), frame.stacktop * sizeof(PyObject*)))
-            return NULL;
-
-        yf = localsplus[frame.stacktop - 1];
+    // Only try if the generator is suspended (not created/cleared)
+    if (gen->gi_frame_state >= FRAME_CLEARED || gen->gi_frame_state == FRAME_CREATED) {
+        return NULL;
     }
 
-    return yf;
+    _PyInterpreterFrame frame;
+    if (copy_type(frame_addr, frame)) {
+        return NULL;
+    }
+
+    // Compute the address of TOS once, based on headers/version.
+    const PyObject** tos_addr = nullptr;
+    if (!dd_get_tos_addr(frame, &tos_addr) || !tos_addr) {
+        return NULL;
+    }
+
+    // Read exactly one pointer from the computed TOS address.
+    PyObject* yf = nullptr;
+    if (copy_type(tos_addr, yf)) {
+        return NULL;  // copy failed
+    }
+
+    return yf;  // may be NULL if the TOS is empty/cleared; that's fine
 }
 
 #elif PY_VERSION_HEX >= 0x030a0000

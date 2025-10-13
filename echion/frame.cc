@@ -334,16 +334,29 @@ Result<Frame*> Frame::read(PyObject* frame_addr, PyObject** prev_addr)
     // We cannot use _PyInterpreterFrame_LASTI because _PyCode_CODE reads
     // from the code object.
 #if PY_VERSION_HEX >= 0x030d0000
-    const int lasti =
-        (static_cast<int>((frame_addr->instr_ptr - 1 -
-                           reinterpret_cast<_Py_CODEUNIT*>(
-                               (reinterpret_cast<PyCodeObject*>(frame_addr->f_executable)))))) -
-        offsetof(PyCodeObject, co_code_adaptive) / sizeof(_Py_CODEUNIT);
-    auto maybe_frame = Frame::get(reinterpret_cast<PyCodeObject*>(frame_addr->f_executable), lasti);
+    const _Py_CODEUNIT *base = NULL;
+    PyCodeObject *co = (PyCodeObject *)frame_addr->f_executable;
+
+    // Both of these can be null in some interpreter states; check first.
+    if (!co || !frame_addr->instr_ptr) {
+        return Result<Frame*>::error(ErrorKind::FrameError);
+    }
+
+    // Start of the 16-bit instruction array (already points at co_code_adaptive).
+    base = _PyCode_CODE(co);
+
+    // instr_ptr points at the *current* opcode; CPython’s “lasti” semantics are “last attempted”.
+    ptrdiff_t ip = frame_addr->instr_ptr - base;
+    if (ip <= 0) {
+        return Result<Frame*>::error(ErrorKind::FrameError);
+    }
+    int lasti = (int)(ip - 1);  // code units, not bytes in 3.11+
+
+    auto maybe_frame = Frame::get(co, lasti);
     if (!maybe_frame) {
         return Result<Frame*>::error(ErrorKind::FrameError);
     }
-    Frame* frame = *maybe_frame;
+    Frame *frame = *maybe_frame;
 #else
     const int lasti = (static_cast<int>((frame_addr->prev_instr -
                                          reinterpret_cast<_Py_CODEUNIT*>((frame_addr->f_code))))) -
