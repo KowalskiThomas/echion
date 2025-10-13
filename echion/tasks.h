@@ -62,7 +62,6 @@ public:
     GenInfo(PyObject* gen_addr);
 };
 
-static inline size_t max_recursion_depth = 0;
 static constexpr const size_t max_allowed_recursion_depth = 100;
 static inline PyObject* call_history[max_allowed_recursion_depth];
 static inline size_t call_history_index = 0;
@@ -85,7 +84,7 @@ void printBacktrace() {
 inline GenInfo::GenInfo(PyObject* gen_addr)
 {
     current_recursion_depth++;
-    std::cerr << "Current recursion depth: " << current_recursion_depth << std::endl;
+    // std::cerr << "Current recursion depth: " << current_recursion_depth << std::endl;
 
     // struct CallHistory {
     //     ~CallHistory() {
@@ -94,6 +93,7 @@ inline GenInfo::GenInfo(PyObject* gen_addr)
     //     }
     // } _call_history;
 
+    assert(current_recursion_depth <= 2 * max_allowed_recursion_depth);
     if (current_recursion_depth > max_allowed_recursion_depth) {
         std::cerr << "Max recursion depth reached for generator " << gen_addr << " at depth " << current_recursion_depth << ". Aborting." << std::endl;
         // printBacktrace();
