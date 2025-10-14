@@ -4,13 +4,15 @@
 
 #pragma once
 
+#include <utility>
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include <unicodeobject.h>
 
 #include <cstdint>
-#include <exception>
 #include <string>
+
+#include <echion/errors.h>
 
 #ifndef UNWIND_NATIVE_DISABLE
 #include <cxxabi.h>
