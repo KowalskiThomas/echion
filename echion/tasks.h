@@ -4,6 +4,9 @@
 
 #pragma once
 
+#include <memory>
+#include <memory_resource>
+#include <unordered_set>
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include <weakrefobject.h>
@@ -42,6 +45,20 @@
 // before raising an error.
 const constexpr size_t MAX_RECURSION_DEPTH = 250;
 
+const constexpr size_t RECURSION_DEPTH_TRACK_CYCLES = 100;
+
+static inline std::byte buffer_gen_info[1024 * 10];
+
+struct StaticGenInfoSet {
+  std::pmr::monotonic_buffer_resource arena;
+  std::pmr::unordered_set<const PyObject*> seen;
+
+  explicit StaticGenInfoSet(std::pmr::memory_resource* upstream = std::pmr::null_memory_resource())
+    : arena(buffer_gen_info, sizeof(buffer_gen_info), upstream), seen(&arena) {
+
+    }
+};
+
 class GenInfo
 {
 public:
@@ -64,9 +81,15 @@ public:
     bool is_running = false;
 
     GenInfo(PyObject* gen_addr);
+
+public:
+    GenInfo(PyObject* gen_addr, std::pmr::unordered_set<const PyObject*>&&);
 };
 
-inline GenInfo::GenInfo(PyObject* gen_addr)
+inline GenInfo::GenInfo(PyObject* gen_addr) : GenInfo(gen_addr, StaticGenInfoSet().seen) {
+}
+
+inline GenInfo::GenInfo(PyObject* gen_addr, std::pmr::unordered_set<const PyObject*>&& seen)
 {
     static thread_local size_t recursion_depth = 0;
     recursion_depth++;
@@ -74,10 +97,17 @@ inline GenInfo::GenInfo(PyObject* gen_addr)
     if (recursion_depth > MAX_RECURSION_DEPTH) {
         recursion_depth--;
         throw Error();
+    } else if (recursion_depth > RECURSION_DEPTH_TRACK_CYCLES) {
+        if (seen.count(gen_addr)) {
+            recursion_depth--;
+            throw Error();
+        }
+        
+        seen.insert(gen_addr);
     }
 
     PyGenObject gen;
-
+    
     if (copy_type(gen_addr, gen) || !PyCoro_CheckExact(&gen)) {
         recursion_depth--;
         throw Error();
@@ -105,7 +135,7 @@ inline GenInfo::GenInfo(PyObject* gen_addr)
     {
         try
         {
-            await = std::make_unique<GenInfo>(yf);
+            await = std::make_unique<GenInfo>(yf, std::move(seen));
         }
         catch (GenInfo::Error&)
         {
@@ -125,6 +155,19 @@ inline GenInfo::GenInfo(PyObject* gen_addr)
 }
 
 // ----------------------------------------------------------------------------
+
+static inline std::byte buffer_task_info[1024 * 10];
+
+template<typename T>
+struct StaticSet {
+  std::pmr::monotonic_buffer_resource arena;
+  std::pmr::unordered_set<const T*> seen;
+
+  explicit StaticSet(std::pmr::memory_resource* upstream = std::pmr::null_memory_resource())
+    : arena(buffer_task_info, sizeof(buffer_task_info), upstream), seen(&arena) {
+
+    }
+};
 
 class TaskInfo
 {
@@ -161,6 +204,7 @@ public:
     TaskInfo::Ptr waiter = nullptr;
 
     TaskInfo(TaskObj*);
+    TaskInfo(TaskObj*, std::pmr::unordered_set<const TaskObj*>&&);
 
     static TaskInfo current(PyObject*);
     inline size_t unwind(FrameStack&);
@@ -169,8 +213,12 @@ public:
 inline std::unordered_map<PyObject*, PyObject*> task_link_map;
 inline std::mutex task_link_map_lock;
 
+
+inline TaskInfo::TaskInfo(TaskObj* task_addr) : TaskInfo(task_addr, StaticSet<TaskObj>().seen) {
+}
+
 // ----------------------------------------------------------------------------
-inline TaskInfo::TaskInfo(TaskObj* task_addr)
+inline TaskInfo::TaskInfo(TaskObj* task_addr, std::pmr::unordered_set<const TaskObj*>&& seen)
 {
     static thread_local size_t recursion_depth = 0;
     recursion_depth++;
@@ -178,6 +226,13 @@ inline TaskInfo::TaskInfo(TaskObj* task_addr)
     if (recursion_depth > MAX_RECURSION_DEPTH) {
         recursion_depth--;
         throw Error();
+    } else if (recursion_depth > RECURSION_DEPTH_TRACK_CYCLES) {
+        if (seen.count(task_addr)) {
+            recursion_depth--;
+            throw Error();
+        }
+        
+        seen.insert(task_addr);
     }
 
     TaskObj task;
@@ -215,7 +270,7 @@ inline TaskInfo::TaskInfo(TaskObj* task_addr)
         try
         {
             waiter =
-                std::make_unique<TaskInfo>((TaskObj*)task.task_fut_waiter);  // TODO: Make lazy?
+                std::make_unique<TaskInfo>((TaskObj*)task.task_fut_waiter, std::move(seen));  // TODO: Make lazy?
         }
         catch (TaskInfo::Error&)
         {
