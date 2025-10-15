@@ -194,6 +194,7 @@ inline TaskInfo::TaskInfo(TaskObj* task_addr)
         recursion_depth--;
         throw GeneratorError();
     }
+    coro = std::move(*maybe_coro);
 
     origin = (PyObject*)task_addr;
 
