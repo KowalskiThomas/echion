@@ -45,7 +45,7 @@ public:
     }
 
     // ------------------------------------------------------------------------
-    void render()
+    void render() const
     {
         for (auto it = this->rbegin(); it != this->rend(); ++it)
         {
@@ -59,7 +59,7 @@ public:
     }
 
     // ------------------------------------------------------------------------
-    void render_where()
+    void render_where() const
     {
         for (auto it = this->rbegin(); it != this->rend(); ++it)
         {
@@ -335,11 +335,11 @@ class StackTable
 {
 public:
     // ------------------------------------------------------------------------
-    FrameStack::Key inline store(FrameStack::Ptr stack)
+    FrameStack::Key inline store(FrameStack&& stack)
     {
         std::lock_guard<std::mutex> lock(this->lock);
 
-        auto stack_key = stack->key();
+        auto stack_key = stack.key();
 
         auto stack_entry = table.find(stack_key);
         if (stack_entry == table.end())
@@ -355,11 +355,11 @@ public:
     }
 
     // ------------------------------------------------------------------------
-    FrameStack& retrieve(FrameStack::Key stack_key)
+    const FrameStack& retrieve(FrameStack::Key stack_key)
     {
         std::lock_guard<std::mutex> lock(this->lock);
 
-        return *table.find(stack_key)->second;
+        return table.find(stack_key)->second;
     }
 
     // ------------------------------------------------------------------------
@@ -371,7 +371,7 @@ public:
     }
 
 private:
-    std::unordered_map<FrameStack::Key, std::unique_ptr<FrameStack>> table;
+    std::unordered_map<FrameStack::Key, FrameStack> table;
     std::mutex lock;
 };
 
