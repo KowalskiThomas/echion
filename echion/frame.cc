@@ -2,6 +2,7 @@
 
 #include <echion/errors.h>
 #include <echion/render.h>
+#include <echion/strings.h>
 
 // ----------------------------------------------------------------------------
 #if PY_VERSION_HEX >= 0x030b0000
