@@ -8,6 +8,7 @@
 #include <Python.h>
 
 #include <deque>
+#include <memory_resource>
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
@@ -114,7 +115,19 @@ inline void unwind_native_stack()
 // ----------------------------------------------------------------------------
 static size_t unwind_frame(PyObject* frame_addr, FrameStack& stack)
 {
-    std::unordered_set<PyObject*> seen_frames;  // Used to detect cycles in the stack
+    // PMR buffer for seen_frames to reduce allocations
+    const size_t BUFFER_SIZE = 8 * 1024 * 1024; // 8MB
+    thread_local static std::byte buffer[BUFFER_SIZE];
+    thread_local static bool buffer_initialized = false;
+    
+    if (!buffer_initialized) {
+        std::memset(buffer, 0, BUFFER_SIZE);
+        buffer_initialized = true;
+    }
+    
+    std::pmr::monotonic_buffer_resource pool{buffer, BUFFER_SIZE, std::pmr::null_memory_resource()};
+    
+    std::pmr::unordered_set<PyObject*> seen_frames{&pool};  // Used to detect cycles in the stack
     int count = 0;
 
     PyObject* current_frame_addr = frame_addr;
@@ -123,7 +136,12 @@ static size_t unwind_frame(PyObject* frame_addr, FrameStack& stack)
         if (seen_frames.find(current_frame_addr) != seen_frames.end())
             break;
 
-        seen_frames.insert(current_frame_addr);
+        try {
+            seen_frames.insert(current_frame_addr);
+        } catch (const std::bad_alloc&) {
+            std::cerr << "ERROR: PMR buffer exhausted in unwind_frame() - buffer size: " << BUFFER_SIZE << " bytes" << std::endl;
+            throw;
+        }
 
 #if PY_VERSION_HEX >= 0x030b0000
         auto maybe_frame =
@@ -151,7 +169,19 @@ static size_t unwind_frame(PyObject* frame_addr, FrameStack& stack)
 // ----------------------------------------------------------------------------
 static size_t unwind_frame_unsafe(PyObject* frame, FrameStack& stack)
 {
-    std::unordered_set<PyObject*> seen_frames;  // Used to detect cycles in the stack
+    // PMR buffer for seen_frames to reduce allocations
+    const size_t BUFFER_SIZE = 8 * 1024 * 1024; // 8MB
+    thread_local static std::byte buffer[BUFFER_SIZE];
+    thread_local static bool buffer_initialized = false;
+    
+    if (!buffer_initialized) {
+        std::memset(buffer, 0, BUFFER_SIZE);
+        buffer_initialized = true;
+    }
+    
+    std::pmr::monotonic_buffer_resource pool{buffer, BUFFER_SIZE, std::pmr::null_memory_resource()};
+    
+    std::pmr::unordered_set<PyObject*> seen_frames{&pool};  // Used to detect cycles in the stack
     int count = 0;
 
     PyObject* current_frame = frame;
@@ -178,7 +208,12 @@ static size_t unwind_frame_unsafe(PyObject* frame, FrameStack& stack)
 #endif  // PY_VERSION_HEX >= 0x030d0000
         count++;
 
-        seen_frames.insert(current_frame);
+        try {
+            seen_frames.insert(current_frame);
+        } catch (const std::bad_alloc&) {
+            std::cerr << "ERROR: PMR buffer exhausted in unwind_frame_unsafe() - buffer size: " << BUFFER_SIZE << " bytes" << std::endl;
+            throw;
+        }
 
         stack.push_back(Frame::get(current_frame));
 
@@ -343,6 +378,9 @@ class StackTable
 {
 public:
     // ------------------------------------------------------------------------
+    StackTable() : table(get_memory_resource()) {}
+
+    // ------------------------------------------------------------------------
     FrameStack::Key inline store(FrameStack::Ptr stack)
     {
         std::lock_guard<std::mutex> lock(this->lock);
@@ -352,7 +390,13 @@ public:
         auto stack_entry = table.find(stack_key);
         if (stack_entry == table.end())
         {
-            table.emplace(stack_key, std::move(stack));
+            try {
+                table.emplace(stack_key, std::move(stack));
+            } catch (const std::bad_alloc&) {
+                std::cerr << "ERROR: PMR buffer exhausted in StackTable::store() - buffer size: " 
+                          << BUFFER_SIZE << " bytes" << std::endl;
+                throw;
+            }
         }
         else
         {
@@ -379,7 +423,17 @@ public:
     }
 
 private:
-    std::unordered_map<FrameStack::Key, std::unique_ptr<FrameStack>> table;
+    static constexpr size_t BUFFER_SIZE = 8 * 1024 * 1024; // 8MB
+
+    // ------------------------------------------------------------------------
+    static std::pmr::memory_resource* get_memory_resource()
+    {
+        static std::byte buffer[BUFFER_SIZE];
+        static std::pmr::monotonic_buffer_resource pool{buffer, BUFFER_SIZE, std::pmr::null_memory_resource()};
+        return &pool;
+    }
+
+    std::pmr::unordered_map<FrameStack::Key, std::unique_ptr<FrameStack>> table;
     std::mutex lock;
 };
 
