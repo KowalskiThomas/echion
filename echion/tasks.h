@@ -22,6 +22,7 @@
 #include <opcode.h>
 #endif  // PY_VERSION_HEX >= 0x30b0000
 
+#include <memory_resource>
 #include <mutex>
 #include <stack>
 #include <unordered_map>
@@ -310,7 +311,10 @@ inline std::vector<std::unique_ptr<StackInfo>> current_tasks;
 inline size_t TaskInfo::unwind(FrameStack& stack)
 {
     // TODO: Check for running task.
-    std::stack<PyObject*> coro_frames;
+    alignas(PyObject*) static thread_local std::byte buffer[4096];
+    std::pmr::monotonic_buffer_resource mbr(buffer, sizeof(buffer));
+    std::pmr::deque<PyObject*> deque_container(&mbr);
+    std::stack<PyObject*, std::pmr::deque<PyObject*>> coro_frames(std::move(deque_container));
 
     // Unwind the coro chain
     for (auto coro = this->coro.get(); coro != NULL; coro = coro->await.get())
