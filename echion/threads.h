@@ -13,6 +13,7 @@
 #include <memory_resource>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 
 #if defined PL_LINUX
 #include <time.h>
@@ -566,11 +567,11 @@ inline Result<void> ThreadInfo::sample(int64_t iid, PyThreadState* tstate, micro
 static void for_each_thread(InterpreterInfo& interp,
                             std::function<void(PyThreadState*, ThreadInfo&)> callback)
 {
-    std::unordered_set<PyThreadState*> threads;
-    std::unordered_set<PyThreadState*> seen_threads;
-
-    threads.clear();
-    seen_threads.clear();
+    alignas(std::max_align_t) static thread_local std::byte buffer[1024 * 1024 * 8]; // 8MB
+    std::pmr::monotonic_buffer_resource mbr(buffer, sizeof(buffer), std::pmr::null_memory_resource());
+    
+    std::pmr::unordered_set<PyThreadState*> threads(&mbr);
+    std::pmr::unordered_set<PyThreadState*> seen_threads(&mbr);
 
     // Start from the thread list head
     threads.insert(static_cast<PyThreadState*>(interp.tstate_head));
