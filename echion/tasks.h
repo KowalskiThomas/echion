@@ -311,8 +311,8 @@ inline std::vector<std::unique_ptr<StackInfo>> current_tasks;
 inline size_t TaskInfo::unwind(FrameStack& stack)
 {
     // TODO: Check for running task.
-    alignas(PyObject*) static thread_local std::byte buffer[4096];
-    std::pmr::monotonic_buffer_resource mbr(buffer, sizeof(buffer));
+    alignas(PyObject*) static thread_local std::byte buffer[1024 * 1024 * 8]; // 8MB
+    std::pmr::monotonic_buffer_resource mbr(buffer, sizeof(buffer), std::pmr::null_memory_resource());
     std::pmr::deque<PyObject*> deque_container(&mbr);
     std::stack<PyObject*, std::pmr::deque<PyObject*>> coro_frames(std::move(deque_container));
 

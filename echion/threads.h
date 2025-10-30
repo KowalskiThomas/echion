@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <functional>
+#include <memory_resource>
 #include <mutex>
 #include <unordered_map>
 
@@ -235,10 +236,13 @@ inline void ThreadInfo::unwind(PyThreadState* tstate)
 // ----------------------------------------------------------------------------
 inline Result<void> ThreadInfo::unwind_tasks()
 {
-    std::vector<TaskInfo::Ref> leaf_tasks;
-    std::unordered_set<PyObject*> parent_tasks;
-    std::unordered_map<PyObject*, TaskInfo::Ref> waitee_map;  // Indexed by task origin
-    std::unordered_map<PyObject*, TaskInfo::Ref> origin_map;  // Indexed by task origin
+    alignas(std::max_align_t) static thread_local std::byte buffer[1024 * 1024 * 8]; // 8MB
+    std::pmr::monotonic_buffer_resource mbr(buffer, sizeof(buffer), std::pmr::null_memory_resource());
+    
+    std::pmr::vector<TaskInfo::Ref> leaf_tasks(&mbr);
+    std::pmr::unordered_set<PyObject*> parent_tasks(&mbr);
+    std::pmr::unordered_map<PyObject*, TaskInfo::Ref> waitee_map(&mbr);  // Indexed by task origin
+    std::pmr::unordered_map<PyObject*, TaskInfo::Ref> origin_map(&mbr);  // Indexed by task origin
 
     auto maybe_all_tasks = get_all_tasks(reinterpret_cast<PyObject*>(asyncio_loop));
     if (!maybe_all_tasks)
