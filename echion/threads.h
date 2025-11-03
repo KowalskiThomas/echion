@@ -257,12 +257,12 @@ inline Result<void> ThreadInfo::unwind_tasks()
 
         // Clean up the task_link_map. Remove entries associated to tasks that
         // no longer exist.
-        std::unordered_set<PyObject*> all_task_origins;
+        std::pmr::unordered_set<PyObject*> all_task_origins(&mbr);
         std::transform(all_tasks.cbegin(), all_tasks.cend(),
                        std::inserter(all_task_origins, all_task_origins.begin()),
                        [](const TaskInfo::Ptr& task) { return task->origin; });
 
-        std::vector<PyObject*> to_remove;
+        std::pmr::vector<PyObject*> to_remove(&mbr);
         for (auto kv : task_link_map)
         {
             if (all_task_origins.find(kv.first) == all_task_origins.end())
@@ -374,7 +374,9 @@ inline void ThreadInfo::unwind_greenlets(PyThreadState* tstate, unsigned long na
     if (greenlet_thread_map.find(native_id) == greenlet_thread_map.end())
         return;
 
-    std::unordered_set<GreenletInfo::ID> parent_greenlets;
+    alignas(std::max_align_t) static thread_local std::byte buffer[1024 * 1024 * 8]; // 8MB
+    std::pmr::monotonic_buffer_resource mbr(buffer, sizeof(buffer), std::pmr::null_memory_resource());
+    std::pmr::unordered_set<GreenletInfo::ID> parent_greenlets(&mbr);
 
     // Collect all parent greenlets
     std::transform(

@@ -8,6 +8,7 @@
 #include <Python.h>
 
 #include <deque>
+#include <memory_resource>
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
@@ -114,7 +115,9 @@ inline void unwind_native_stack()
 // ----------------------------------------------------------------------------
 static size_t unwind_frame(PyObject* frame_addr, FrameStack& stack)
 {
-    std::unordered_set<PyObject*> seen_frames;  // Used to detect cycles in the stack
+    alignas(std::max_align_t) static thread_local std::byte buffer[1024 * 1024 * 8]; // 8MB
+    std::pmr::monotonic_buffer_resource mbr(buffer, sizeof(buffer), std::pmr::null_memory_resource());
+    std::pmr::unordered_set<PyObject*> seen_frames(&mbr);  // Used to detect cycles in the stack
     int count = 0;
 
     PyObject* current_frame_addr = frame_addr;
@@ -151,7 +154,9 @@ static size_t unwind_frame(PyObject* frame_addr, FrameStack& stack)
 // ----------------------------------------------------------------------------
 static size_t unwind_frame_unsafe(PyObject* frame, FrameStack& stack)
 {
-    std::unordered_set<PyObject*> seen_frames;  // Used to detect cycles in the stack
+    alignas(std::max_align_t) static thread_local std::byte buffer[1024 * 1024 * 8]; // 8MB
+    std::pmr::monotonic_buffer_resource mbr(buffer, sizeof(buffer), std::pmr::null_memory_resource());
+    std::pmr::unordered_set<PyObject*> seen_frames(&mbr);  // Used to detect cycles in the stack
     int count = 0;
 
     PyObject* current_frame = frame;
