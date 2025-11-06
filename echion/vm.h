@@ -29,7 +29,8 @@ ssize_t process_vm_readv(pid_t, const struct iovec*, unsigned long liovcnt,
 
 #define copy_type(addr, dest) (copy_memory(pid, addr, sizeof(dest), &dest))
 #define copy_type_p(addr, dest) (copy_memory(pid, addr, sizeof(*dest), dest))
-#define copy_generic(addr, dest, size) (copy_memory(pid, reinterpret_cast<const void*>(addr), size, reinterpret_cast<void*>(dest)))
+#define copy_generic(addr, dest, size) \
+    (copy_memory(pid, reinterpret_cast<const void*>(addr), size, reinterpret_cast<void*>(dest)))
 
 #elif defined PL_DARWIN
 #include <mach/mach.h>
@@ -45,24 +46,29 @@ typedef mach_port_t proc_ref_t;
 #define copy_generic(addr, dest, size) \
     (copy_memory(mach_task_self(), (void*)(addr), size, (void*)(dest)))
 
-inline kern_return_t (*safe_copy)(vm_map_read_t, mach_vm_address_t, mach_vm_size_t, mach_vm_address_t, mach_vm_size_t*) = mach_vm_read_overwrite;
+inline kern_return_t (*safe_copy)(vm_map_read_t, mach_vm_address_t, mach_vm_size_t,
+                                  mach_vm_address_t, mach_vm_size_t*) = mach_vm_read_overwrite;
 
 #endif
 
-inline bool is_truthy(const char* s) {
-    const static std::array<std::string, 6> truthy_values = {"1",  "true",   "yes", "on", "enable", "enabled"};
-    
-    return std::find(truthy_values.begin(), truthy_values.end(), s) != truthy_values.end();
+inline bool is_truthy(const char* s)
+{
+    const static std::array<std::string, 6> truthy_values = {"1",  "true",   "yes",
+                                                             "on", "enable", "enabled"};
 
+    return std::find(truthy_values.begin(), truthy_values.end(), s) != truthy_values.end();
 }
 
-inline bool use_alternative_copy_memory() {
+inline bool use_alternative_copy_memory()
+{
     const char* use_fast_copy_memory = std::getenv("ECHION_USE_FAST_COPY_MEMORY");
-    if (!use_fast_copy_memory) {
+    if (!use_fast_copy_memory)
+    {
         return false;
     }
 
-    if (is_truthy(use_fast_copy_memory)) {
+    if (is_truthy(use_fast_copy_memory))
+    {
         return true;
     }
 
@@ -235,12 +241,14 @@ __attribute__((constructor)) inline void init_safe_copy()
 {
     if (use_alternative_copy_memory())
     {
-        if (init_segv_catcher() == 0) {
+        if (init_segv_catcher() == 0)
+        {
             safe_copy = safe_memcpy_wrapper;
             return;
         }
 
-        std::cerr << "Failed to initialize segv catcher. Using process_vm_readv instead." << std::endl;
+        std::cerr << "Failed to initialize segv catcher. Using process_vm_readv instead."
+                  << std::endl;
     }
 
     char src[128];
@@ -290,15 +298,17 @@ __attribute__((constructor)) inline void init_safe_copy()
 {
     if (use_alternative_copy_memory())
     {
-        if (init_segv_catcher() == 0) {
+        if (init_segv_catcher() == 0)
+        {
             safe_copy = safe_memcpy_wrapper;
             return;
         }
 
-        std::cerr << "Failed to initialize segv catcher. Using process_vm_readv instead." << std::endl;
+        std::cerr << "Failed to initialize segv catcher. Using process_vm_readv instead."
+                  << std::endl;
     }
 }
-#endif // if defined PL_DARWIN
+#endif  // if defined PL_DARWIN
 
 /**
  * Copy a chunk of memory from a portion of the virtual memory of another
@@ -333,8 +343,8 @@ static inline int copy_memory(proc_ref_t proc_ref, const void* addr, ssize_t len
     result = safe_copy(proc_ref, local, 1, remote, 1, 0);
 
 #elif defined PL_DARWIN
-    kern_return_t kr = safe_copy(proc_ref, (mach_vm_address_t)addr, len,
-                                              (mach_vm_address_t)buf, (mach_vm_size_t*)&result);
+    kern_return_t kr = safe_copy(proc_ref, (mach_vm_address_t)addr, len, (mach_vm_address_t)buf,
+                                 (mach_vm_size_t*)&result);
 
     if (kr != KERN_SUCCESS)
         return -1;

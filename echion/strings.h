@@ -37,7 +37,8 @@ static std::unique_ptr<unsigned char[]> pybytes_to_bytes_and_size(PyObject* byte
         return nullptr;
 
     auto data = std::make_unique<unsigned char[]>(*size);
-    if (copy_generic(reinterpret_cast<char*>(bytes_addr) + offsetof(PyBytesObject, ob_sval), data.get(), *size))
+    if (copy_generic(reinterpret_cast<char*>(bytes_addr) + offsetof(PyBytesObject, ob_sval),
+                     data.get(), *size))
         return nullptr;
 
     return data;
@@ -55,8 +56,10 @@ static Result<std::string> pyunicode_to_utf8(PyObject* str_addr)
     if (ascii.state.kind != 1)
         return ErrorKind::PyUnicodeError;
 
-    const char* data = ascii.state.compact ? reinterpret_cast<const char*>(reinterpret_cast<const uint8_t*>(str_addr) + sizeof(ascii))
-                                           : static_cast<const char*>(str._base.utf8);
+    const char* data = ascii.state.compact
+                           ? reinterpret_cast<const char*>(
+                                 reinterpret_cast<const uint8_t*>(str_addr) + sizeof(ascii))
+                           : static_cast<const char*>(str._base.utf8);
     if (data == NULL)
         return ErrorKind::PyUnicodeError;
 

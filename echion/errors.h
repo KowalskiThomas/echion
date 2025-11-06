@@ -97,8 +97,8 @@ public:
     }
 
     // Copy assignment
-    Result& operator=(const Result& other) noexcept(std::is_nothrow_copy_constructible<T>::value &&
-                                                    std::is_nothrow_copy_assignable<T>::value)
+    Result& operator=(const Result& other) noexcept(
+        std::is_nothrow_copy_constructible<T>::value&& std::is_nothrow_copy_assignable<T>::value)
     {
         if (this == &other)
             return *this;
@@ -126,8 +126,8 @@ public:
     }
 
     // Move assignment
-    Result& operator=(Result&& other) noexcept(std::is_nothrow_move_constructible<T>::value &&
-                                               std::is_nothrow_move_assignable<T>::value)
+    Result& operator=(Result&& other) noexcept(
+        std::is_nothrow_move_constructible<T>::value&& std::is_nothrow_move_assignable<T>::value)
     {
         if (this == &other)
             return *this;

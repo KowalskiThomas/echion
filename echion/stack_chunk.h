@@ -88,7 +88,8 @@ void* StackChunk::resolve(void* address)
 
     // Check if this chunk contains the address
     if (address >= origin && address < reinterpret_cast<char*>(origin) + chunk->size)
-        return reinterpret_cast<char*>(chunk) + (reinterpret_cast<char*>(address) - reinterpret_cast<char*>(origin));
+        return reinterpret_cast<char*>(chunk) +
+               (reinterpret_cast<char*>(address) - reinterpret_cast<char*>(origin));
 
     if (previous)
         return previous->resolve(address);
