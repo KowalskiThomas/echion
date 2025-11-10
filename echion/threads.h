@@ -276,8 +276,10 @@ inline Result<void> ThreadInfo::unwind_tasks()
     {
         origin_map.emplace(task->origin, std::ref(*task));
 
-        if (task->waiter != NULL)
+        if (task->waiter != NULL) {
             waitee_map.emplace(task->waiter->origin, std::ref(*task));
+            std::cerr << "Added waitee to map for " << string_table.lookup(task->name)->get() << " : " << string_table.lookup(task->waiter->name)->get() << std::endl;
+        }
         else if (parent_tasks.find(task->origin) == parent_tasks.end())
         {
             if (cpu && ignore_non_running_threads && !task->coro->is_running)
@@ -290,9 +292,17 @@ inline Result<void> ThreadInfo::unwind_tasks()
         }
     }
 
+    std::cerr << "Leaf tasks: ";
+    for (const auto& task : leaf_tasks) {
+        std::cerr << string_table.lookup(task.get().name)->get() << ", ";
+    }
+    std::cerr << std::endl;
+
     for (auto& task : leaf_tasks)
     {
+        const auto& task_name = string_table.lookup(task.get().name)->get();
         bool on_cpu = task.get().coro->is_running;
+        std::cerr << "==== Unwinding leaf task " << task_name << " / on_cpu: " << on_cpu << std::endl; 
         auto stack_info = std::make_unique<StackInfo>(task.get().name, on_cpu);
         auto& stack = stack_info->stack;
         for (auto current_task = task;;)
@@ -303,6 +313,7 @@ inline Result<void> ThreadInfo::unwind_tasks()
 
             if (on_cpu)
             {
+                std::cerr << "  Doing the CPU thing" << std::endl;
                 // Undo the stack unwinding
                 // TODO[perf]: not super-efficient :(
                 for (size_t i = 0; i < stack_size; i++)
@@ -332,6 +343,7 @@ inline Result<void> ThreadInfo::unwind_tasks()
             PyObject* task_origin = task.origin;
             if (waitee_map.find(task_origin) != waitee_map.end())
             {
+                std::cerr << "  Found waitee to unwind: " << string_table.lookup(waitee_map.find(task_origin)->second.get().name)->get() << std::endl;
                 current_task = waitee_map.find(task_origin)->second;
                 continue;
             }
@@ -349,6 +361,11 @@ inline Result<void> ThreadInfo::unwind_tasks()
             }
 
             break;
+        }
+
+        std::cerr << "  Final stack" << std::endl;
+        for (size_t i = 0; i < stack.size(); i++) {
+            std::cerr << "    stack[" << i << "]: " << string_table.lookup(stack[i].get().name)->get() << std::endl;
         }
 
         // Finish off with the remaining thread stack
