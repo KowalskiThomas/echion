@@ -42,6 +42,28 @@ def gather(self, children, *, loop):
 
     return _gather(self, children, loop=loop)
 
+# -----------------------------------------------------------------------------
+
+_as_completed = asyncio.as_completed
+
+T = TypeVar('T')
+
+@wraps(asyncio.as_completed)
+def as_completed(fs: Iterable["asyncio.Future[T]"], *, timeout: Optional[float]=None) -> Iterator[asyncio.Future[T]]:
+    print("as_completed", fs)
+    loop = asyncio.get_running_loop()
+    parent = tasks.current_task(loop)
+    assert parent is not None
+
+    for child in fs:
+        # child here can be a lot of things, and not only a Task
+        # we may need to monitor/patch ensure_future to capture the Task-making
+        # although that may be hard as e.g. here we'll call ensure_future more than
+        # once so not easy to do it per-child.
+        print("Linking task", parent, child)
+        echion.link_tasks(parent, cast(asyncio.Task, child))
+
+    return cast(Iterator[Future[T]], _as_completed(fs, timeout=timeout))
 
 # -----------------------------------------------------------------------------
 
@@ -65,12 +87,14 @@ def wait(fs: Iterable[asyncio.Future[T]], timeout: Optional[float], return_when,
 def patch():
     BaseDefaultEventLoopPolicy.set_event_loop = set_event_loop  # type: ignore[method-assign]
     tasks._GatheringFuture.__init__ = gather  # type: ignore[attr-defined]
+    asyncio.as_completed = as_completed  # type: ignore[attr-defined]
     tasks._wait = wait  # type: ignore[attr-defined]
 
 
 def unpatch():
     BaseDefaultEventLoopPolicy.set_event_loop = _set_event_loop  # type: ignore[method-assign]
     tasks._GatheringFuture.__init__ = _gather  # type: ignore[attr-defined]
+    asyncio.as_completed = _as_completed  # type: ignore[attr-defined]
     tasks._wait = _wait  # type: ignore[attr-defined]
 
 
