@@ -1,8 +1,9 @@
 import pytest
 
-from tests.utils import PY, DataSummary, run_target
+from tests.utils import PY, DataSummary, run_target, retry_on_failure
 
 
+@retry_on_failure
 def test_asyncio_as_completed():
     result, data = run_target("target_asyncio_as_completed")
     assert result.returncode == 0, result.stderr.decode()

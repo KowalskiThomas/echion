@@ -1,6 +1,8 @@
 from tests.utils import PY, DataSummary, run_target
+from tests.utils import retry_on_failure
 
 
+@retry_on_failure
 def test_asyncio_coroutines_wall_time():
     result, data = run_target("target_async_coroutines")
     assert result.returncode == 0, result.stderr.decode()

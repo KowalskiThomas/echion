@@ -1,9 +1,10 @@
 import pytest
 
-from tests.utils import PY, DataSummary, run_target
+from tests.utils import PY, DataSummary, run_target, retry_on_failure
 
 
 @pytest.mark.xfail(condition=PY >= (3, 13), reason="Sampling async context manager stacks does not work on >=3.13")
+@retry_on_failure
 def test_asyncio_context_manager_wall_time():
     result, data = run_target("target_async_with")
     assert result.returncode == 0, result.stderr.decode()

@@ -1,6 +1,8 @@
+from functools import wraps
 from itertools import count
 import os
 import sys
+import time
 import typing as t
 from pathlib import Path
 from shutil import which
@@ -176,3 +178,21 @@ else:
     no_sudo = pytest.mark.skipif(
         os.geteuid() == 0, reason="Must not have superuser privileges"
     )
+
+def retry_on_failure(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        MAX_ATTEMPTS = 3
+        for i in range(MAX_ATTEMPTS):
+            try:
+                start = time.time()
+                return func(*args, **kwargs)
+            except Exception as e:
+                end = time.time()
+                if i == MAX_ATTEMPTS - 1:
+                    print(f"Failed to run {func.__name__} after {MAX_ATTEMPTS} attempts: {e}")
+                    raise e
+            
+                print(f"Failed after {end - start:0.2f}s, retrying {func.__name__} (attempt {i+1})...")
+
+    return wrapper

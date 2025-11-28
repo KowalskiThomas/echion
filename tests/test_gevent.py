@@ -1,9 +1,15 @@
 import linecache
+import pytest
 from itertools import count
 from types import FunctionType
 
 from tests.utils import PY, DataSummary, run_target
 
+gevent_available = True
+try:
+    import gevent
+except:
+    gevent_available = False
 
 def get_line_number(function: FunctionType, content: str) -> int:
     code = function.__code__
@@ -21,13 +27,14 @@ def get_line_number(function: FunctionType, content: str) -> int:
 
     raise ValueError("Line not found")
 
-
+@pytest.mark.skipif(not gevent_available, reason="Gevent is not available")
 def test_gevent():
     import echion.monkey.gevent as _gevent
 
     result, data = run_target("target_gevent")
     assert result.returncode == 0, result.stderr.decode()
 
+    assert data is not None
     md = data.metadata
     assert md["mode"] == "wall"
     assert md["interval"] == "1000"
