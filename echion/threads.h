@@ -290,37 +290,40 @@ inline Result<void> ThreadInfo::unwind_tasks()
         }
     }
 
+
+    // Make sure the on CPU task is first
+    // TODO: this is probably a performance disaster
+    std::sort(leaf_tasks.begin(), leaf_tasks.end(), [](const TaskInfo::Ref& a, const TaskInfo::Ref& b) {
+        return ((a.get().is_on_cpu ? 0 : 1) < (b.get().is_on_cpu ? 0 : 1));
+    });
+
+    // The size of the "pure Python" stack (before asyncio Frames), computed later by TaskInfo::unwind
+    size_t upper_python_stack_size = 0;
+    // Unused variable, will be used later by TaskInfo::unwind
+    size_t unused;
+
+    bool on_cpu_task_seen = false;
     for (auto& leaf_task : leaf_tasks)
     {
         auto stack_info = std::make_unique<StackInfo>(leaf_task.get().name, leaf_task.get().is_on_cpu);
+        on_cpu_task_seen = on_cpu_task_seen || leaf_task.get().is_on_cpu;
+
         auto& stack = stack_info->stack;
         for (auto current_task = leaf_task;;)
         {
             auto& task = current_task.get();
 
-            size_t stack_size = task.unwind(stack);
-
+            // The task_stack_size includes both the coroutines frames and the "upper" Python synchronous frames
+            size_t task_stack_size = task.unwind(stack, task.is_on_cpu ? upper_python_stack_size : unused);
             if (task.is_on_cpu)
             {
-                // Undo the stack unwinding
-                // TODO[perf]: not super-efficient :(
-                for (size_t i = 0; i < stack_size; i++)
-                    stack.pop_back();
-
-                // Instead we get part of the thread stack
-                FrameStack temp_stack;
-                size_t nframes =
-                    (python_stack.size() > stack_size) ? python_stack.size() - stack_size : 0;
-                for (size_t i = 0; i < nframes; i++)
+                // Get the "bottom" part of the Python synchronous Stack, that is to say the
+                // synchronous functions called by the Task's innermost coroutine.
+                size_t frames_to_push = (python_stack.size() > task_stack_size) ? python_stack.size() - task_stack_size : 0;
+                for (size_t i = 0; i < frames_to_push; i++)
                 {
-                    auto python_frame = python_stack.front();
-                    temp_stack.push_front(python_frame);
-                    python_stack.pop_front();
-                }
-                while (!temp_stack.empty())
-                {
-                    stack.push_front(temp_stack.front());
-                    temp_stack.pop_front();
+                    const auto& python_frame = python_stack[frames_to_push - i - 1];
+                    stack.push_front(python_frame);
                 }
             }
 
@@ -351,8 +354,10 @@ inline Result<void> ThreadInfo::unwind_tasks()
         }
 
         // Finish off with the remaining thread stack
-        for (auto p = python_stack.begin(); p != python_stack.end(); p++)
-            stack.push_back(*p);
+        for (size_t i = python_stack.size() - (on_cpu_task_seen ? upper_python_stack_size : python_stack.size()); i < python_stack.size(); i++) {
+            const auto& python_frame = python_stack[i];
+            stack.push_back(python_frame);
+        }
 
         current_tasks.push_back(std::move(stack_info));
     }
