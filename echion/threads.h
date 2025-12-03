@@ -335,7 +335,6 @@ inline Result<void> ThreadInfo::unwind_tasks()
     bool on_cpu_task_seen = false;
     for (auto& leaf_task : leaf_tasks)
     {
-        std::cerr << "== Unwinding leaf task " << string_table.lookup(leaf_task.get().name)->get() << std::endl;
         bool on_cpu = false;
         if (!on_cpu_task_seen) { 
             on_cpu = leaf_task.get().is_on_cpu();
@@ -349,7 +348,6 @@ inline Result<void> ThreadInfo::unwind_tasks()
         for (auto current_task = leaf_task;;)
         {
             auto& task = current_task.get();
-            std::cerr << "Unwinding task " << string_table.lookup(task.name)->get() << std::endl;
 
             // Only the leaf Task can be on CPU, we we only compute is_on_cpu() if the current Task is the leaf Task
             bool current_task_on_cpu = &task == &leaf_task.get() && task.is_on_cpu();
@@ -368,22 +366,15 @@ inline Result<void> ThreadInfo::unwind_tasks()
                 }
             }
 
-            std::cerr << "Stack after unwinding task " << string_table.lookup(task.name)->get() << std::endl;
-            for (auto& frame : stack) {
-                std::cerr << "  " << string_table.lookup(frame.get().name)->get() << std::endl;
-            }
-
             // Add the task name frame
             stack.push_back(Frame::get(task.name));
 
             auto task_name = string_table.lookup(task.name)->get();
-            std::cerr << "Searching for Task Link from " << task_name << std::endl;
 
             // Get the next task in the chain
             PyObject* task_origin = task.origin;
             if (waitee_map.find(task_origin) != waitee_map.end())
             {
-                std::cerr << "found waitee link from " << task_origin << " to " << waitee_map.find(task_origin)->second.get().name << std::endl;
                 current_task = waitee_map.find(task_origin)->second;
                 continue;
             }
@@ -397,7 +388,6 @@ inline Result<void> ThreadInfo::unwind_tasks()
                 if (task_link_map.find(task_origin) != task_link_map.end() &&
                     origin_map.find(task_link_map[task_origin]) != origin_map.end())
                 {
-                    std::cerr << "found strong link from " << task_origin << " to " << task_link_map[task_origin] << std::endl;
                     current_task = origin_map.find(task_link_map[task_origin])->second;
                     continue;
                 }
@@ -406,14 +396,11 @@ inline Result<void> ThreadInfo::unwind_tasks()
                 if (weak_task_link_map.find(task_origin) != weak_task_link_map.end() &&
                     origin_map.find(weak_task_link_map[task_origin]) != origin_map.end())
                 {
-                    std::cerr << "found weak link from " << task_origin << " to " << weak_task_link_map[task_origin] << std::endl;
                     current_task = origin_map.find(weak_task_link_map[task_origin])->second;
-                    std::cerr << "-> current_task = " << string_table.lookup(current_task.get().name)->get() << std::endl;
                     continue;
                 }
             }
             
-            std::cerr << "no link found from " << task_origin << std::endl;
             break;
         }
 

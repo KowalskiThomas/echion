@@ -27,7 +27,8 @@ async def f5():
 
 
 async def main():
-    await asyncio.create_task(f1(), name="F1")
+    while True:
+        await asyncio.create_task(f1(), name="F1")
 
 
 asyncio.run(main())

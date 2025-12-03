@@ -2,6 +2,7 @@
 //
 // Copyright (c) 2023 Gabriele N. Tornetta <phoenix1987@gmail.com>.
 
+#include <chrono>
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #if PY_VERSION_HEX >= 0x030c0000
@@ -526,6 +527,227 @@ static PyObject* weak_link_tasks(PyObject* Py_UNUSED(m), PyObject* args)
 }
 
 // ----------------------------------------------------------------------------
+static Result<std::vector<std::string>> capture_thread_stack_impl(unsigned long target_native_id)
+{
+    std::vector<std::string> frames;
+
+    // Ensure frame cache is initialized
+    if (frame_cache == nullptr)
+    {
+        init_frame_cache(CACHE_MAX_ENTRIES);
+    }
+
+    // Find the thread by native ID
+    bool found = false;
+    for_each_interp([&](InterpreterInfo& interp) -> void {
+        if (found)
+            return;
+
+        for_each_thread(interp, [&](PyThreadState* tstate, ThreadInfo& thread) {
+            if (found)
+                return;
+
+            if (thread.thread_id != target_native_id)
+                return;
+
+            found = true;
+
+            // Unwind Python stack for this thread
+            FrameStack stack;
+            unwind_python_stack_unsafe(tstate, stack);
+
+            // Format each frame as "filename:line function"
+            for (auto it = stack.rbegin(); it != stack.rend(); ++it)
+            {
+#if PY_VERSION_HEX >= 0x030c0000
+                if ((*it).get().is_entry)
+                    continue;
+#endif
+                auto& frame = (*it).get();
+
+                auto maybe_filename = string_table.lookup(frame.filename);
+                auto maybe_name = string_table.lookup(frame.name);
+
+                std::string filename_str = maybe_filename ? maybe_filename->get() : "<unknown>";
+                std::string name_str = maybe_name ? maybe_name->get() : "<unknown>";
+
+                std::string frame_str =
+                    filename_str + ":" + std::to_string(frame.location.line) + " " + name_str;
+                frames.push_back(std::move(frame_str));
+            }
+        });
+    });
+
+    if (!found)
+    {
+        std::cerr << "Thread not found for thread ident " << target_native_id << std::endl;
+        return ErrorKind::ThreadInfoError;
+    }
+
+    return frames;
+}
+
+// ----------------------------------------------------------------------------
+static PyObject* capture_thread_stack(PyObject* Py_UNUSED(m), PyObject* args)
+{
+    unsigned long native_id;
+
+    if (!PyArg_ParseTuple(args, "k", &native_id))
+        return NULL;
+
+    std::cerr << "Capturing stack trace for thread " << native_id << std::endl;
+    auto result = capture_thread_stack_impl(native_id);
+    if (!result)
+    {
+        PyErr_SetString(PyExc_RuntimeError, "Failed to capture stack trace for thread");
+        return NULL;
+    }
+
+    auto& frames = *result;
+    PyObject* list = PyList_New(frames.size());
+    if (list == NULL)
+        return NULL;
+
+    for (size_t i = 0; i < frames.size(); i++)
+    {
+        PyObject* frame_str = PyUnicode_FromString(frames[i].c_str());
+        if (frame_str == NULL)
+        {
+            Py_DECREF(list);
+            return NULL;
+        }
+        PyList_SET_ITEM(list, i, frame_str);
+    }
+
+    return list;
+}
+
+// ----------------------------------------------------------------------------
+
+std::unordered_map<PyObject*, std::vector<std::string>> task_stacks;
+std::unordered_map<PyObject*, std::chrono::steady_clock::time_point> task_start_times;
+
+static PyObject* on_task_started(PyObject* Py_UNUSED(m), PyObject* args)
+{
+    unsigned long thread_ident;
+    PyObject* task;
+    if (!PyArg_ParseTuple(args, "lO", &thread_ident, &task))
+    {
+        std::cerr << "Failed to parse arguments for on_task_started" << std::endl;
+        return NULL;
+    }
+
+    {
+        std::lock_guard<std::mutex> guard(thread_info_map_lock);
+        auto entry = thread_info_map.find(thread_ident);
+        if (entry == thread_info_map.end())
+        {
+            PyErr_SetString(PyExc_RuntimeError, "Thread not found");
+            return NULL;
+        }
+    }
+
+    auto result = capture_thread_stack_impl(thread_ident);
+
+    if (!result)
+    {
+        std::cerr << "Failed to capture stack trace for thread " << thread_ident << std::endl;
+        Py_RETURN_NONE;
+    }
+
+    // Remove the frame for our monkey patch
+    result->pop_back();
+
+    task_start_times[task] = std::chrono::steady_clock::now();
+    task_stacks[task] = std::move(*result);
+
+    Py_RETURN_NONE;
+}
+
+// ----------------------------------------------------------------------------
+
+static PyObject* on_task_finished(PyObject* Py_UNUSED(m), PyObject* args)
+{
+    PyObject* task;
+    if (!PyArg_ParseTuple(args, "O", &task))
+        return NULL;
+
+    auto start_time = task_start_times.find(task);
+    if (start_time == task_start_times.end())
+    {
+        std::cerr << "Task start time not found for task " << task << std::endl;
+        Py_RETURN_NONE;
+    }
+
+    auto end_time = std::chrono::steady_clock::now();
+    auto duration = end_time - start_time->second;
+    std::cerr << "Task " << task << " took " << duration.count() / 1000 << " milliseconds, origin was:" << std::endl;
+    
+    for (auto& frame : task_stacks[task])
+    {
+        std::cerr << "  " << frame << std::endl;
+    }
+
+    task_stacks.erase(task);
+    task_start_times.erase(task);
+
+    Py_RETURN_NONE;
+}
+
+// ----------------------------------------------------------------------------
+
+std::unordered_map<PyObject*, std::chrono::steady_clock::time_point> executor_task_start_times;
+std::unordered_map<PyObject*, std::vector<std::string>> executor_task_stacks;
+
+static PyObject* on_task_submitted_to_executor(PyObject* Py_UNUSED(m), PyObject* args)
+{
+    uintptr_t thread_ident;
+    PyObject* func;
+    PyObject* fut;
+    if (!PyArg_ParseTuple(args, "lOO", &thread_ident, &func, &fut))
+        return nullptr;
+
+    executor_task_start_times[fut] = std::chrono::steady_clock::now();
+    auto result = capture_thread_stack_impl(thread_ident);
+    if (!result)
+    {
+        std::cerr << "Failed to capture stack trace for thread " << thread_ident << std::endl;
+        Py_RETURN_NONE;
+    }
+
+    // Remove the frame for our monkey patch
+    result->pop_back();
+
+    executor_task_stacks[fut] = std::move(*result);
+    std::cerr << "Task submitted to executor: " << func << " " << fut << std::endl;
+    Py_RETURN_NONE;
+}
+
+// ----------------------------------------------------------------------------
+static PyObject* on_task_completed_by_executor(PyObject* Py_UNUSED(m), PyObject* args)
+{
+    PyObject* fut;
+    if (!PyArg_ParseTuple(args, "O", &fut))
+        return nullptr;
+
+    auto start_time = executor_task_start_times.find(fut);
+    if (start_time == executor_task_start_times.end())
+    {
+        std::cerr << "Task start time not found for task " << fut << std::endl;
+        Py_RETURN_NONE;
+    }
+
+    auto end_time = std::chrono::steady_clock::now();
+    auto duration = end_time - start_time->second;
+    std::cerr << "Task " << fut << " took " << duration.count() / 1000 << " milliseconds, origin was:" << std::endl;
+    
+    for (auto& frame : executor_task_stacks[fut])
+    {
+        std::cerr << "  " << frame << std::endl;
+    }
+    Py_RETURN_NONE;
+}
+
 static PyMethodDef echion_core_methods[] = {
     {"start", start, METH_NOARGS, "Start the stack sampler"},
     {"start_async", start_async, METH_NOARGS, "Start the stack sampler asynchronously"},
@@ -553,6 +775,14 @@ static PyMethodDef echion_core_methods[] = {
     {"set_where", set_where, METH_VARARGS, "Set whether to use where mode"},
     {"set_pipe_name", set_pipe_name, METH_VARARGS, "Set the pipe name"},
     {"set_max_frames", set_max_frames, METH_VARARGS, "Set the max number of frames to unwind"},
+    // Stack capture
+    {"capture_thread_stack", capture_thread_stack, METH_VARARGS,
+     "Capture the stack trace of a thread by native ID"},
+    // Task support
+    {"on_task_started", on_task_started, METH_VARARGS, "Callback when a task is started"},
+    {"on_task_finished", on_task_finished, METH_VARARGS, "Callback when a task is finished"},
+    {"on_task_submitted_to_executor", on_task_submitted_to_executor, METH_VARARGS, "Callback when a task is submitted to an executor"},
+    {"on_task_completed_by_executor", on_task_completed_by_executor, METH_VARARGS, "Callback when a task is completed by an executor"},
     // Sentinel
     {NULL, NULL, 0, NULL}};
 
