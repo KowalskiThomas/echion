@@ -27,7 +27,7 @@ def test_cpu_time(stealth):
     assert (
         summary.query(
             "0:SecondaryThread",
-            ("Thread.run" if PY >= (3, 11) else "run", "keep_cpu_busy"),
+            (("Thread.run" if PY >= (3, 11) else "run", 0), ("keep_cpu_busy", 39)),
         )
         is not None
     )
