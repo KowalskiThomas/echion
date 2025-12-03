@@ -51,7 +51,9 @@ class DataSummary:
     def nthreads(self):
         return len(self.threads)
 
-    def query(self, thread_name, frames):
+    def query(
+        self, thread_name: str, frames: t.Sequence[tuple[str, int]]
+    ) -> t.Optional[int]:
         try:
             stacks = self.threads[thread_name]
         except KeyError as e:
@@ -64,7 +66,9 @@ class DataSummary:
                     return stacks[stack]
         return None
 
-    def assert_stack(self, thread, frames, predicate):
+    def assert_stack(
+        self, thread: str, frames: t.Sequence[str], predicate: t.Callable[[int], bool]
+    ) -> None:
         try:
             stack = self.threads[thread][frames]
             assert predicate(stack), stack
