@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import threading
+import time
 import typing as t
 from asyncio import tasks
 from asyncio.events import BaseDefaultEventLoopPolicy
@@ -90,7 +92,13 @@ _create_task = tasks.create_task
 @wraps(_create_task)
 def create_task(coro, *, name: t.Optional[str] = None, **kwargs: t.Any) -> asyncio.Task[t.Any]:
     # kwargs will typically contain context (Python 3.11+ only) and eager_start (Python 3.14+ only)
+
     task = _create_task(coro, name=name, **kwargs)
+    
+    from echion import core as echion
+    echion.on_task_started(current_thread().ident or -1, task)
+    task.add_done_callback(lambda _: echion.on_task_finished(task))
+
     parent: t.Optional[asyncio.Task] = tasks.current_task()
 
     if parent is not None:

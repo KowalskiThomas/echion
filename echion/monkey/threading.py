@@ -17,6 +17,7 @@ def thread_set_native_id(self, *args: t.Any, **kwargs: t.Any) -> None:
     _thread_set_native_id(self, *args, **kwargs)
     # This is the point when the thread identifier is set, so we can map it to
     # the thread name.
+    print("Tracking thread", self.ident, self.name, self.native_id)
     echion.track_thread(self.ident, self.name, self.native_id)
 
 
