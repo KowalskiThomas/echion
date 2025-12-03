@@ -526,6 +526,100 @@ static PyObject* weak_link_tasks(PyObject* Py_UNUSED(m), PyObject* args)
 }
 
 // ----------------------------------------------------------------------------
+static Result<std::vector<std::string>> capture_thread_stack_impl(unsigned long target_native_id)
+{
+    std::vector<std::string> frames;
+
+    // Ensure frame cache is initialized
+    if (frame_cache == nullptr)
+    {
+        init_frame_cache(CACHE_MAX_ENTRIES);
+    }
+
+    // Find the thread by native ID
+    bool found = false;
+    for_each_interp([&](InterpreterInfo& interp) -> void {
+        if (found)
+            return;
+
+        for_each_thread(interp, [&](PyThreadState* tstate, ThreadInfo& thread) {
+            if (found)
+                return;
+
+            if (thread.native_id != target_native_id)
+                return;
+
+            found = true;
+
+            // Unwind Python stack for this thread
+            FrameStack stack;
+            unwind_python_stack_unsafe(tstate, stack);
+
+            // Format each frame as "filename:line function"
+            for (auto it = stack.rbegin(); it != stack.rend(); ++it)
+            {
+#if PY_VERSION_HEX >= 0x030c0000
+                if ((*it).get().is_entry)
+                    continue;
+#endif
+                auto& frame = (*it).get();
+
+                auto maybe_filename = string_table.lookup(frame.filename);
+                auto maybe_name = string_table.lookup(frame.name);
+
+                std::string filename_str = maybe_filename ? maybe_filename->get() : "<unknown>";
+                std::string name_str = maybe_name ? maybe_name->get() : "<unknown>";
+
+                std::string frame_str =
+                    filename_str + ":" + std::to_string(frame.location.line) + " " + name_str;
+                frames.push_back(std::move(frame_str));
+            }
+        });
+    });
+
+    if (!found)
+    {
+        return ErrorKind::ThreadInfoError;
+    }
+
+    return frames;
+}
+
+// ----------------------------------------------------------------------------
+static PyObject* capture_thread_stack(PyObject* Py_UNUSED(m), PyObject* args)
+{
+    unsigned long native_id;
+
+    if (!PyArg_ParseTuple(args, "k", &native_id))
+        return NULL;
+
+    auto result = capture_thread_stack_impl(native_id);
+    if (!result)
+    {
+        PyErr_SetString(PyExc_RuntimeError, "Failed to capture stack trace for thread");
+        return NULL;
+    }
+
+    auto& frames = *result;
+    PyObject* list = PyList_New(frames.size());
+    if (list == NULL)
+        return NULL;
+
+    for (size_t i = 0; i < frames.size(); i++)
+    {
+        PyObject* frame_str = PyUnicode_FromString(frames[i].c_str());
+        if (frame_str == NULL)
+        {
+            Py_DECREF(list);
+            return NULL;
+        }
+        PyList_SET_ITEM(list, i, frame_str);
+    }
+
+    return list;
+}
+
+// ----------------------------------------------------------------------------
 static PyMethodDef echion_core_methods[] = {
     {"start", start, METH_NOARGS, "Start the stack sampler"},
     {"start_async", start_async, METH_NOARGS, "Start the stack sampler asynchronously"},
@@ -553,6 +647,9 @@ static PyMethodDef echion_core_methods[] = {
     {"set_where", set_where, METH_VARARGS, "Set whether to use where mode"},
     {"set_pipe_name", set_pipe_name, METH_VARARGS, "Set the pipe name"},
     {"set_max_frames", set_max_frames, METH_VARARGS, "Set the max number of frames to unwind"},
+    // Stack capture
+    {"capture_thread_stack", capture_thread_stack, METH_VARARGS,
+     "Capture the stack trace of a thread by native ID"},
     // Sentinel
     {NULL, NULL, 0, NULL}};
 
