@@ -694,6 +694,60 @@ static PyObject* on_task_finished(PyObject* Py_UNUSED(m), PyObject* args)
     Py_RETURN_NONE;
 }
 
+// ----------------------------------------------------------------------------
+
+std::unordered_map<PyObject*, std::chrono::steady_clock::time_point> executor_task_start_times;
+std::unordered_map<PyObject*, std::vector<std::string>> executor_task_stacks;
+
+static PyObject* on_task_submitted_to_executor(PyObject* Py_UNUSED(m), PyObject* args)
+{
+    uintptr_t thread_ident;
+    PyObject* func;
+    PyObject* fut;
+    if (!PyArg_ParseTuple(args, "lOO", &thread_ident, &func, &fut))
+        return nullptr;
+
+    executor_task_start_times[fut] = std::chrono::steady_clock::now();
+    auto result = capture_thread_stack_impl(thread_ident);
+    if (!result)
+    {
+        std::cerr << "Failed to capture stack trace for thread " << thread_ident << std::endl;
+        Py_RETURN_NONE;
+    }
+
+    // Remove the frame for our monkey patch
+    result->pop_back();
+
+    executor_task_stacks[fut] = std::move(*result);
+    std::cerr << "Task submitted to executor: " << func << " " << fut << std::endl;
+    Py_RETURN_NONE;
+}
+
+// ----------------------------------------------------------------------------
+static PyObject* on_task_completed_by_executor(PyObject* Py_UNUSED(m), PyObject* args)
+{
+    PyObject* fut;
+    if (!PyArg_ParseTuple(args, "O", &fut))
+        return nullptr;
+
+    auto start_time = executor_task_start_times.find(fut);
+    if (start_time == executor_task_start_times.end())
+    {
+        std::cerr << "Task start time not found for task " << fut << std::endl;
+        Py_RETURN_NONE;
+    }
+
+    auto end_time = std::chrono::steady_clock::now();
+    auto duration = end_time - start_time->second;
+    std::cerr << "Task " << fut << " took " << duration.count() / 1000 << " milliseconds, origin was:" << std::endl;
+    
+    for (auto& frame : executor_task_stacks[fut])
+    {
+        std::cerr << "  " << frame << std::endl;
+    }
+    Py_RETURN_NONE;
+}
+
 static PyMethodDef echion_core_methods[] = {
     {"start", start, METH_NOARGS, "Start the stack sampler"},
     {"start_async", start_async, METH_NOARGS, "Start the stack sampler asynchronously"},
@@ -727,6 +781,8 @@ static PyMethodDef echion_core_methods[] = {
     // Task support
     {"on_task_started", on_task_started, METH_VARARGS, "Callback when a task is started"},
     {"on_task_finished", on_task_finished, METH_VARARGS, "Callback when a task is finished"},
+    {"on_task_submitted_to_executor", on_task_submitted_to_executor, METH_VARARGS, "Callback when a task is submitted to an executor"},
+    {"on_task_completed_by_executor", on_task_completed_by_executor, METH_VARARGS, "Callback when a task is completed by an executor"},
     // Sentinel
     {NULL, NULL, 0, NULL}};
 

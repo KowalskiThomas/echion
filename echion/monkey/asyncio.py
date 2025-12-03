@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import sys
 import threading
 import time
@@ -11,6 +12,9 @@ from functools import wraps
 from threading import current_thread
 
 import echion.core as echion
+
+if sys.platform == "linux":
+    from asyncio.unix_events import _UnixSelectorEventLoop
 
 
 # -----------------------------------------------------------------------------
@@ -106,6 +110,21 @@ def create_task(coro, *, name: t.Optional[str] = None, **kwargs: t.Any) -> async
 
     return task
 
+if sys.platform == "linux":
+    _run_in_executor = _UnixSelectorEventLoop.run_in_executor
+else:
+    raise NotImplementedError(f"Unsupported platform: {sys.platform}")
+
+@wraps(_run_in_executor)
+def run_in_executor(self, executor, func, *args, **kwargs):
+    fut = _run_in_executor(self, executor, func, *args, **kwargs)  
+    
+    # Track submission and completion of the Task to the Executor
+    echion.on_task_submitted_to_executor(current_thread().ident or -1, func, fut)
+    fut.add_done_callback(lambda _: echion.on_task_completed_by_executor(fut))
+
+    return fut
+
 
 # -----------------------------------------------------------------------------
 
@@ -117,7 +136,11 @@ def patch() -> None:
     asyncio.as_completed = as_completed  # type: ignore[attr-defined,assignment]
     tasks.create_task = create_task  # type: ignore[attr-defined,assignment]
     asyncio.create_task = create_task  # type: ignore[attr-defined,assignment]
-
+    
+    if sys.platform == "linux":
+        _UnixSelectorEventLoop.run_in_executor = run_in_executor
+    else:
+        raise NotImplementedError(f"Unsupported platform: {sys.platform}")
 
 def unpatch() -> None:
     BaseDefaultEventLoopPolicy.set_event_loop = _set_event_loop  # type: ignore[method-assign]
@@ -127,6 +150,11 @@ def unpatch() -> None:
     asyncio.as_completed = _as_completed
     tasks.create_task = _create_task  # type: ignore[attr-defined]
     asyncio.create_task = _create_task  # type: ignore[attr-defined]
+
+    if sys.platform == "linux":
+        _UnixSelectorEventLoop.run_in_executor = _run_in_executor
+    else:
+        raise NotImplementedError(f"Unsupported platform: {sys.platform}")
 
 
 def track() -> None:
