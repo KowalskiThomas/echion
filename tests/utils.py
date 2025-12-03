@@ -77,17 +77,29 @@ class DataSummary:
                 f"Expected stack {frames}, found {self.threads[thread].keys()}"
             ) from None
 
-    def assert_substack(self, thread, frames, predicate):
+    def assert_substack(
+        self, thread: str, frames: t.Sequence[str], predicate: t.Callable[[int], bool]
+    ) -> None:
+        non_matching_stacks: list[tuple[tuple[str, int], int]] = []
         try:
             stacks = self.threads[thread]
             for stack in stacks:
                 for i in range(0, len(stack) - len(frames) + 1):
                     substack = stack[i : i + len(frames)]
                     if substack == frames:
-                        assert predicate(stacks[stack]), stacks[stack]
-                        return
+                        if predicate(stacks[stack]):
+                            return
+
+                        non_matching_stacks.append((stack, stacks[stack]))
             else:
-                raise AssertionError("No matching substack found")
+                if not non_matching_stacks:
+                    raise AssertionError(
+                        f"No matching substack found for frames {frames} in thread {thread}"
+                    ) from None
+
+                raise AssertionError(
+                    f"No matching substack found for frames {frames} in thread {thread}. Non-matching stacks: {non_matching_stacks}"
+                ) from None
 
         except KeyError:
             if thread not in self.threads:
