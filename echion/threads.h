@@ -235,6 +235,13 @@ inline void ThreadInfo::unwind(PyThreadState* tstate)
 // ----------------------------------------------------------------------------
 inline Result<void> ThreadInfo::unwind_tasks()
 {
+    std::cerr << "===== Unwinding tasks ==" << std::endl;
+    std::cerr << "Python stack:" << std::endl;
+    for (size_t i = 0; i < python_stack.size(); i++)
+    {
+        std::cerr << "  " << i << ": " << string_table.lookup(python_stack[i].get().name)->get() << std::endl;
+    }
+
     std::vector<TaskInfo::Ref> leaf_tasks;
     std::unordered_set<PyObject*> parent_tasks;
     std::unordered_map<PyObject*, TaskInfo::Ref> waitee_map;  // Indexed by task origin
@@ -284,12 +291,12 @@ inline Result<void> ThreadInfo::unwind_tasks()
             {
                 // This task is not running, so we skip it if we are
                 // interested in just CPU time.
+                std::cerr << "SKIPPING TASK " << string_table.lookup(task->name)->get() << " because it is not on CPU" << std::endl;
                 continue;
             }
             leaf_tasks.push_back(std::ref(*task));
         }
     }
-
 
     // Make sure the on CPU task is first
     // TODO: this is probably a performance disaster
@@ -305,6 +312,7 @@ inline Result<void> ThreadInfo::unwind_tasks()
     bool on_cpu_task_seen = false;
     for (auto& leaf_task : leaf_tasks)
     {
+        std::cerr << "== Unwinding leaf task: " << string_table.lookup(leaf_task.get().name)->get() << std::endl;
         auto stack_info = std::make_unique<StackInfo>(leaf_task.get().name, leaf_task.get().is_on_cpu);
         on_cpu_task_seen = on_cpu_task_seen || leaf_task.get().is_on_cpu;
 
@@ -312,23 +320,37 @@ inline Result<void> ThreadInfo::unwind_tasks()
         for (auto current_task = leaf_task;;)
         {
             auto& task = current_task.get();
+            std::cerr << "= Unwinding task: " << string_table.lookup(task.name)->get() << " on cpu: " << task.is_on_cpu << std::endl;
 
             // The task_stack_size includes both the coroutines frames and the "upper" Python synchronous frames
             size_t task_stack_size = task.unwind(stack, task.is_on_cpu ? upper_python_stack_size : unused);
             if (task.is_on_cpu)
             {
                 // Get the "bottom" part of the Python synchronous Stack, that is to say the
-                // synchronous functions called by the Task's innermost coroutine.
+                // synchronous functions and coroutines called by the Task's outermost coroutine
+                // The number of Frames to push is the total number of Frames in the Python stack, from which we
+                // subtract the number of Frames in the "upper Python stack" (asyncio machinery + sync entrypoint)
+                // This gives us [outermost coroutine, ... , innermost coroutine, outermost sync function, ... , innermost sync function]
                 size_t frames_to_push = (python_stack.size() > task_stack_size) ? python_stack.size() - task_stack_size : 0;
+                std::cerr << "Task is on CPU, pushing " << frames_to_push << " frames" << std::endl;
                 for (size_t i = 0; i < frames_to_push; i++)
                 {
                     const auto& python_frame = python_stack[frames_to_push - i - 1];
+                    std::cerr << "  " << i << ": " << string_table.lookup(python_frame.get().name)->get() << std::endl;
                     stack.push_front(python_frame);
                 }
+            } else {
+                std::cerr << "Task is not on CPU..." << std::endl;
             }
 
             // Add the task name frame
             stack.push_back(Frame::get(task.name));
+            std::cerr << "Pushed task name frame: " << string_table.lookup(task.name)->get() << std::endl;
+
+            std::cerr << "Stack at the end for that Task" << std::endl;
+            for (size_t i = 0; i < stack.size(); i++) {
+                std::cerr << "  " << i << ": " << string_table.lookup(stack[i].get().name)->get() << std::endl;
+            }
 
             // Get the next task in the chain
             PyObject* task_origin = task.origin;
@@ -354,9 +376,22 @@ inline Result<void> ThreadInfo::unwind_tasks()
         }
 
         // Finish off with the remaining thread stack
+        // If we have seen an on-CPU Task, then upper_python_stack_size will be set and will include the sync entry point
+        // and the asyncio machinery Frames. Otherwise, we are in `select` (idle) and we should push all the Frames.
+        std::cerr << "Pushing the remaining Thread stack" << std::endl;
+        for (size_t i = 0; i < python_stack.size() - (on_cpu_task_seen ? upper_python_stack_size : python_stack.size()); i++) {
+            const auto& python_frame = python_stack[i];
+            std::cerr << "  Skipped: " << i << ": " << string_table.lookup(python_frame.get().name)->get() << std::endl;
+        }
         for (size_t i = python_stack.size() - (on_cpu_task_seen ? upper_python_stack_size : python_stack.size()); i < python_stack.size(); i++) {
             const auto& python_frame = python_stack[i];
+            std::cerr << "  Pushed:  " << i << ": " << string_table.lookup(python_frame.get().name)->get() << std::endl;
             stack.push_back(python_frame);
+        }
+
+        std::cerr << "Stack after pushing the remaining Thread stack" << std::endl;
+        for (size_t i = 0; i < stack.size(); i++) {
+            std::cerr << "  " << i << ": " << string_table.lookup(stack[i].get().name)->get() << std::endl;
         }
 
         current_tasks.push_back(std::move(stack_info));

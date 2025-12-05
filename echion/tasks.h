@@ -362,37 +362,47 @@ inline std::vector<std::unique_ptr<StackInfo>> current_tasks;
 
 inline size_t TaskInfo::unwind(FrameStack& stack, size_t& upper_python_stack_size)
 {
+    std::cerr << "Unwinding the Task" << std::endl;
     // TODO: Check for running task.
     std::stack<PyObject*> coro_frames;
 
     // Unwind the coroutine chain
     for (auto coro = this->coro.get(); coro != NULL; coro = coro->await.get())
     {
-        if (coro->frame != NULL)
+        if (coro->frame != NULL) {
             coro_frames.push(coro->frame);
+        }
     }
 
     // Total number of frames added to the Stack
     size_t count = 0;
 
     // Unwind the coroutine frames
+    std::cerr << "Unwinding the coroutine frames, we have " << coro_frames.size() << " coro frames" << std::endl;
     while (!coro_frames.empty())
     {
         PyObject* frame = coro_frames.top();
         coro_frames.pop();
 
         auto new_frames = unwind_frame(frame, stack);
+        std::cerr << "Unwound " << new_frames << " frames" << std::endl;
+        for (size_t i = 0; i < new_frames; i++) {
+            std::cerr << "  " << i << ": " << string_table.lookup(stack[stack.size() - i - 1].get().name)->get() << std::endl;
+        }
 
         // If this is the first Frame being unwound (we have not added any Frames to the Stack yet),
         // use the number of Frames added to the Stack to determine the size of the upper Python stack.
         if (count == 0) {
             // The first Frame is the coroutine Frame, so the Python stack size is the number of Frames - 1
             upper_python_stack_size = new_frames - 1;
+            std::cerr << "Determining the size of the upper Python stack: " << upper_python_stack_size << std::endl;
 
             // Remove the Python Frames from the Stack (they will be added back later)
             // We cannot push those Frames now because otherwise they would be added once per Task,
             // we only want to add them once per Leaf Task, and on top of all non-leaf Tasks.
+            std::cerr << "Removing " << upper_python_stack_size << " frames from the Stack" << std::endl;
             for (size_t i = 0; i < upper_python_stack_size; i++) {
+                std::cerr << "  - " << string_table.lookup(stack[stack.size() - 1].get().name)->get() << std::endl;
                 stack.pop_back();
             }
         }

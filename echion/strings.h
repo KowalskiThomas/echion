@@ -211,12 +211,12 @@ public:
     }
 #endif  // UNWIND_NATIVE_DISABLE
 
-    [[nodiscard]] inline Result<std::reference_wrapper<std::string>> lookup(Key key)
+    [[nodiscard]] inline Result<std::reference_wrapper<const std::string>> lookup(Key key) const
     {
         const std::lock_guard<std::mutex> lock(table_lock);
 
-        auto it = this->find(key);
-        if (it == this->end())
+        const auto it = this->find(key);
+        if (it == this->cend())
             return ErrorKind::LookupError;
 
         return std::ref(it->second);
@@ -229,8 +229,17 @@ public:
         this->emplace(UNKNOWN, "<unknown>");
     };
 
+    void dump(std::ostream& os) const
+    {
+        os << "String table:" << std::endl;
+        for (const auto& [key, value] : *this)
+        {
+            os << "  " << key << ": " << value << std::endl;
+        }
+    }
+
 private:
-    std::mutex table_lock;
+    mutable std::mutex table_lock;
 };
 
 // We make this a reference to a heap-allocated object so that we can avoid

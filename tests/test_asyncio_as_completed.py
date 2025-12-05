@@ -6,6 +6,7 @@ from tests.utils import PY, DataSummary, run_target, retry_on_valueerror, dump_s
 def test_asyncio_as_completed():
     result, data = run_target("target_asyncio_as_completed")
     assert result.returncode == 0, result.stderr.decode()
+    print("stderr", result.stderr.decode())
 
     assert data is not None
     md = data.metadata
@@ -72,5 +73,6 @@ def test_asyncio_as_completed():
                     lambda v: v >= 0.00,
                 )
     except AssertionError:
+        print("stderr", result.stderr.decode())
         print(json.dumps(summary_to_json(summary), indent=4))
         raise

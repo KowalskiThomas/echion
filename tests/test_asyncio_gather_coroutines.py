@@ -69,5 +69,6 @@ def test_asyncio_gather_coroutines_wall_time():
                 lambda v: v >= 0.0,
             )
     except AssertionError:
+        print("stderr", result.stderr.decode())
         print(json.dumps(summary_to_json(summary), indent=4))
         raise
