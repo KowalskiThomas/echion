@@ -35,6 +35,7 @@ def gather(self, children, *, loop):
     assert parent is not None
 
     for child in children:
+        #print(f"Linking parent {parent} to child {child}")
         echion.link_tasks(parent, child)
 
     return _gather(self, children, loop=loop)
@@ -56,6 +57,7 @@ def wait(
     assert parent is not None
 
     for child in fs:
+        #print(f"Linking parent {parent} to child {child}")
         echion.link_tasks(parent, child)
 
     return _wait(fs, timeout, return_when, loop)
@@ -77,6 +79,7 @@ def as_completed(
     if parent is not None:
         futures: set[asyncio.Future] = {asyncio.ensure_future(f, loop=loop) for f in set(fs)}
         for child in futures:
+            #print(f"Linking parent {parent} to child {child}")
             echion.link_tasks(parent, child)
 
     return _as_completed(futures, *args, **kwargs)
