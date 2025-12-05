@@ -330,6 +330,73 @@ inline Result<void> ThreadInfo::unwind_tasks()
         return ((a.get().is_on_cpu ? 0 : 1) < (b.get().is_on_cpu ? 0 : 1));
     });
 
+    std::cerr << "Leaf tasks:" << std::endl;
+    for (const auto& leaf_task : leaf_tasks) {
+        std::cerr << "  " << string_table.lookup(leaf_task.get().name)->get() << " on cpu: " << leaf_task.get().is_on_cpu << std::endl;
+    }
+
+    // Print a tree of Task dependencies
+    std::cerr << "Task tree:" << std::endl;
+    {
+        // Build parent->children maps
+        std::unordered_map<PyObject*, std::vector<PyObject*>> children_map;  // parent -> children
+        std::unordered_set<PyObject*> has_parent;
+
+        // From gather links
+        {
+            std::lock_guard<std::mutex> lock(task_link_map_lock);
+            for (const auto& kv : task_link_map) {
+                children_map[kv.second].push_back(kv.first);
+                has_parent.insert(kv.first);
+            }
+        }
+
+        // From waiter relationships (waiter is the parent, current task is child)
+        for (const auto& task : all_tasks) {
+            if (task->waiter) {
+                children_map[task->waiter->origin].push_back(task->origin);
+                has_parent.insert(task->origin);
+            }
+        }
+
+        // Find roots (tasks with no parent)
+        std::vector<PyObject*> roots;
+        for (const auto& task : all_tasks) {
+            if (has_parent.find(task->origin) == has_parent.end()) {
+                roots.push_back(task->origin);
+            }
+        }
+
+        // Recursive print function
+        std::function<void(PyObject*, const std::string&, bool)> print_tree;
+        print_tree = [&](PyObject* task_origin, const std::string& prefix, bool is_last) {
+            auto it = origin_map.find(task_origin);
+            if (it == origin_map.end()) return;
+
+            const auto& task = it->second.get();
+            auto maybe_name = string_table.lookup(task.name);
+            std::string name_str = maybe_name ? maybe_name->get() : "<unknown>";
+
+            std::cerr << prefix << (is_last ? "└── " : "├── ")
+                      << name_str << " (" << task_origin << ")"
+                      << (task.is_on_cpu ? " [ON CPU]" : "") << std::endl;
+
+            auto children_it = children_map.find(task_origin);
+            if (children_it != children_map.end()) {
+                const auto& children = children_it->second;
+                for (size_t i = 0; i < children.size(); i++) {
+                    print_tree(children[i], prefix + (is_last ? "    " : "│   "), i == children.size() - 1);
+                }
+            }
+        };
+
+        for (size_t i = 0; i < roots.size(); i++) {
+            print_tree(roots[i], "", i == roots.size() - 1);
+        }
+    }
+    
+
+
     // The size of the "pure Python" stack (before asyncio Frames), computed later by TaskInfo::unwind
     size_t upper_python_stack_size = 0;
     // Unused variable, will be used later by TaskInfo::unwind
