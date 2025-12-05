@@ -242,6 +242,18 @@ inline Result<void> ThreadInfo::unwind_tasks()
         std::cerr << "  " << i << ": " << string_table.lookup(python_stack[i].get().name)->get() << std::endl;
     }
 
+    // Check if the Python stack contains "_run"
+    bool expect_at_least_one_running_task = false;
+    for (size_t i = 0; i < python_stack.size(); i++) {
+        const auto& name = string_table.lookup(python_stack[i].get().name)->get();
+        // Check if ends with "_run"
+        if (name.size() >= 4 && name.rfind("_run") == name.size() - 4) {
+            std::cerr << "Python stack contains \"_run\" at position " << i << ": " << name << std::endl;
+            expect_at_least_one_running_task = true;
+            break;
+        }
+    }
+
     std::vector<TaskInfo::Ref> leaf_tasks;
     std::unordered_set<PyObject*> parent_tasks;
     std::unordered_map<PyObject*, TaskInfo::Ref> waitee_map;  // Indexed by task origin
@@ -250,6 +262,20 @@ inline Result<void> ThreadInfo::unwind_tasks()
     auto maybe_all_tasks = get_all_tasks(reinterpret_cast<PyObject*>(asyncio_loop));
     if (!maybe_all_tasks)
     {
+        return ErrorKind::TaskInfoError;
+    }
+
+    bool saw_at_least_one_running_task = false;
+    for (const auto& task_ref : *maybe_all_tasks) {
+        const auto& task = task_ref.get();
+        if (task->is_on_cpu) {
+            saw_at_least_one_running_task = true;
+            break;
+        }
+    }
+
+    if (saw_at_least_one_running_task != expect_at_least_one_running_task) {
+        std::cerr << "Expected " << (expect_at_least_one_running_task ? "at least one" : "no") << " running task, but saw " << (saw_at_least_one_running_task ? "at least one" : "no") << " running task" << std::endl;
         return ErrorKind::TaskInfoError;
     }
 
