@@ -242,15 +242,36 @@ inline Result<void> ThreadInfo::unwind_tasks()
         std::cerr << "  " << i << ": " << string_table.lookup(python_stack[i].get().name)->get() << std::endl;
     }
 
-    // Check if the Python stack contains "_run"
+    // Check if the Python stack contains "_run". 
+    // To avoid having to do string comparisons every time we unwind Tasks, we keep track
+    // of the cache key of the "_run" Frame.
+    static std::optional<Frame::Key> frame_cache_key;
     bool expect_at_least_one_running_task = false;
-    for (size_t i = 0; i < python_stack.size(); i++) {
-        const auto& name = string_table.lookup(python_stack[i].get().name)->get();
-        // Check if ends with "_run"
-        if (name.size() >= 4 && name.rfind("_run") == name.size() - 4) {
-            std::cerr << "Python stack contains \"_run\" at position " << i << ": " << name << std::endl;
-            expect_at_least_one_running_task = true;
-            break;
+    if (!frame_cache_key) {
+        for (size_t i = 0; i < python_stack.size(); i++) {
+            const auto& frame = python_stack[i].get();
+            const auto& name = string_table.lookup(frame.name)->get();
+            if (name.size() >= 4 && name.rfind("_run") == name.size() - 4) {
+                std::cerr << "Python stack contains \"_run\" [string] at position " << i << ": " << name << std::endl;
+
+                // Although Frames are stored in an LRUCache, the cache key is ALWAYS the same
+                // even if the Frame gets evicted from the cache.
+                // This means we can keep the cache key and re-use it to determine
+                // whether we see the "_run" Frame in the Python stack.
+                frame_cache_key = frame.cache_key;
+                std::cerr << "Setting frame_cache_key to " << frame.cache_key << std::endl;
+                expect_at_least_one_running_task = true;
+                break;
+            }
+        }
+    } else {
+        for (size_t i = 0; i < python_stack.size(); i++) {
+            const auto& frame = python_stack[i].get();
+            if (frame.cache_key == *frame_cache_key) {
+                std::cerr << "Python stack contains \"_run\" [cache key] at position " << i << ": " << string_table.lookup(frame.name)->get() << std::endl;
+                expect_at_least_one_running_task = true;
+                break;
+            }
         }
     }
 
@@ -472,10 +493,10 @@ inline Result<void> ThreadInfo::unwind_tasks()
         // If we have seen an on-CPU Task, then upper_python_stack_size will be set and will include the sync entry point
         // and the asyncio machinery Frames. Otherwise, we are in `select` (idle) and we should push all the Frames.
         std::cerr << "Pushing the remaining Thread stack" << std::endl;
-        for (size_t i = 0; i < python_stack.size() - (on_cpu_task_seen ? upper_python_stack_size : python_stack.size()); i++) {
-            const auto& python_frame = python_stack[i];
-            std::cerr << "  Skipped: " << i << ": " << string_table.lookup(python_frame.get().name)->get() << std::endl;
-        }
+        // for (size_t i = 0; i < python_stack.size() - (on_cpu_task_seen ? upper_python_stack_size : python_stack.size()); i++) {
+        //     const auto& python_frame = python_stack[i];
+        //     std::cerr << "  Skipped: " << i << ": " << string_table.lookup(python_frame.get().name)->get() << std::endl;
+        // }
         for (size_t i = python_stack.size() - (on_cpu_task_seen ? upper_python_stack_size : python_stack.size()); i < python_stack.size(); i++) {
             const auto& python_frame = python_stack[i];
             std::cerr << "  Pushed:  " << i << ": " << string_table.lookup(python_frame.get().name)->get() << std::endl;
