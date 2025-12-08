@@ -229,6 +229,15 @@ public:
         this->emplace(UNKNOWN, "<unknown>");
     };
 
+    void dump(std::ostream& os) const
+    {
+        os << "String table:" << std::endl;
+        for (const auto& [key, value] : *this)
+        {
+            os << "  " << key << ": " << value << std::endl;
+        }
+    }
+
 private:
     mutable std::mutex table_lock;
 };
