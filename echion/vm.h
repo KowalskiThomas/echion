@@ -143,8 +143,7 @@ public:
             instance = VmReader::create(1024 * 1024);  // A megabyte?
             if (!instance)
             {
-                std::cerr << "Failed to initialize VmReader with buffer size " << instance->sz
-                          << std::endl;
+                std::cerr <<"Failed to initialize VmReader with buffer size " << instance->sz << std::endl;
                 return nullptr;
             }
         }
@@ -240,7 +239,7 @@ __attribute__((constructor)) inline void init_safe_copy()
             return;
         }
 
-        std::cerr << "Failed to initialize segv catcher. Using process_vm_readv instead." << std::endl;
+        // std::cerr <<"Failed to initialize segv catcher. Using process_vm_readv instead." << std::endl;
     }
 
     char src[128];
@@ -295,7 +294,7 @@ __attribute__((constructor)) inline void init_safe_copy()
             return;
         }
 
-        std::cerr << "Failed to initialize segv catcher. Using process_vm_readv instead." << std::endl;
+        // std::cerr <<"Failed to initialize segv catcher. Using process_vm_readv instead." << std::endl;
     }
 }
 #endif // if defined PL_DARWIN

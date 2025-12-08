@@ -362,7 +362,7 @@ inline std::vector<std::unique_ptr<StackInfo>> current_tasks;
 
 inline Result<size_t> TaskInfo::unwind(FrameStack& stack, size_t& upper_python_stack_size)
 {
-    std::cerr << "Unwinding the Task" << std::endl;
+    // std::cerr <<"Unwinding the Task" << std::endl;
     // TODO: Check for running task.
     std::stack<PyObject*> coro_frames;
 
@@ -378,16 +378,16 @@ inline Result<size_t> TaskInfo::unwind(FrameStack& stack, size_t& upper_python_s
     size_t count = 0;
 
     // Unwind the coro frames
-    std::cerr << "Unwinding the coroutine frames, we have " << coro_frames.size() << " coro frames" << std::endl;
+    // std::cerr <<"Unwinding the coroutine frames, we have " << coro_frames.size() << " coro frames" << std::endl;
     while (!coro_frames.empty())
     {
         PyObject* frame = coro_frames.top();
         coro_frames.pop();
 
         auto new_frames = unwind_frame(frame, stack);
-        std::cerr << "Unwound " << new_frames << " frames" << (new_frames > 1 ? " more than one" : "") << std::endl;
+        // std::cerr <<"Unwound " << new_frames << " frames" << (new_frames > 1 ? " more than one" : "") << std::endl;
         for (size_t i = 0; i < new_frames; i++) {
-            std::cerr << "  " << i << ": " << string_table.lookup(stack[stack.size() - i - 1].get().name)->get() << std::endl;
+            // std::cerr <<"  " << i << ": " << string_table.lookup(stack[stack.size() - i - 1].get().name)->get() << std::endl;
         }
 
         // If this is the first Frame being unwound (we have not added any Frames to the Stack yet),
@@ -395,19 +395,19 @@ inline Result<size_t> TaskInfo::unwind(FrameStack& stack, size_t& upper_python_s
         if (count == 0) {
             // The first Frame is the coroutine Frame, so the Python stack size is the number of Frames - 1
             upper_python_stack_size = new_frames - 1;
-            std::cerr << "Determining the size of the upper Python stack: " << upper_python_stack_size << std::endl;
+            // std::cerr <<"Determining the size of the upper Python stack: " << upper_python_stack_size << std::endl;
 
             if (this->is_on_cpu && upper_python_stack_size == 0) {
-                std::cerr << "Task is on CPU, but the upper Python stack size is 0. This is not possible." << std::endl;
+                // std::cerr <<"Task is on CPU, but the upper Python stack size is 0. This is not possible." << std::endl;
                 return ErrorKind::TaskInfoError;
             }
 
             // Remove the Python Frames from the Stack (they will be added back later)
             // We cannot push those Frames now because otherwise they would be added once per Task,
             // we only want to add them once per Leaf Task, and on top of all non-leaf Tasks.
-            std::cerr << "Removing " << upper_python_stack_size << " frames from the Stack" << std::endl;
+            // std::cerr <<"Removing " << upper_python_stack_size << " frames from the Stack" << std::endl;
             for (size_t i = 0; i < upper_python_stack_size; i++) {
-                std::cerr << "  - " << string_table.lookup(stack[stack.size() - 1].get().name)->get() << std::endl;
+                // std::cerr <<"  - " << string_table.lookup(stack[stack.size() - 1].get().name)->get() << std::endl;
                 stack.pop_back();
             }
         }

@@ -281,7 +281,7 @@ static Result<void> interleave_stacks(FrameStack& python_stack)
             {
                 // We expected a Python frame but we found none, so we report
                 // the native frame instead.
-                std::cerr << "Expected Python frame(s), found none!" << std::endl;
+                // std::cerr <<"Expected Python frame(s), found none!" << std::endl;
                 interleaved_stack.push_front(native_frame);
             }
             else
@@ -311,7 +311,7 @@ static Result<void> interleave_stacks(FrameStack& python_stack)
 
     if (p != python_stack.rend())
     {
-        std::cerr << "Python stack not empty after interleaving!" << std::endl;
+        // std::cerr <<"Python stack not empty after interleaving!" << std::endl;
         while (p != python_stack.rend())
             interleaved_stack.push_front(*p++);
     }

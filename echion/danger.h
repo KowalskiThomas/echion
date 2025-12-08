@@ -64,7 +64,7 @@ public:
 
         void* mem = mmap(nullptr, kAltStackSize, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
         if (mem == MAP_FAILED) {
-            std::cerr << "Failed to allocate alt stack. Memory copying may not work." << " Error: " << strerror(errno) << std::endl;
+            // std::cerr <<"Failed to allocate alt stack. Memory copying may not work." << " Error: " << strerror(errno) << std::endl;
             return -1;
         }
 
@@ -73,7 +73,7 @@ public:
         ss.ss_size = kAltStackSize;
         ss.ss_flags = 0;
         if (sigaltstack(&ss, nullptr) != 0) {
-            std::cerr << "Failed to set alt stack. Memory copying may not work." << " Error: " << strerror(errno) << std::endl;
+            // std::cerr <<"Failed to set alt stack. Memory copying may not work." << " Error: " << strerror(errno) << std::endl;
             return -1;
         }
 

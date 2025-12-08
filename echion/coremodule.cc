@@ -54,7 +54,7 @@ static void do_where(std::ostream& stream)
                 auto interleave_success = interleave_stacks();
                 if (!interleave_success)
                 {
-                    std::cerr << "could not interleave stacks" << std::endl;
+                    // std::cerr <<"could not interleave stacks" << std::endl;
                     return;
                 }
 
@@ -131,7 +131,7 @@ static inline void _start()
             do_where(pipe);
 
         else
-            std::cerr << "Failed to open pipe " << pipe_name << std::endl;
+            // std::cerr <<"Failed to open pipe " << pipe_name << std::endl;
 
         running = 0;
 

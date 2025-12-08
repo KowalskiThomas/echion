@@ -210,7 +210,7 @@ public:
         output.open(std::getenv("ECHION_OUTPUT"));
         if (!output.is_open())
         {
-            std::cerr << "Failed to open output file " << std::getenv("ECHION_OUTPUT") << std::endl;
+            // std::cerr <<"Failed to open output file " << std::getenv("ECHION_OUTPUT") << std::endl;
             return ErrorKind::RendererError;
         }
 
