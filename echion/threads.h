@@ -235,6 +235,36 @@ inline void ThreadInfo::unwind(PyThreadState* tstate)
 // ----------------------------------------------------------------------------
 inline Result<void> ThreadInfo::unwind_tasks()
 {
+    // Check if the Python stack contains "_run". 
+    // To avoid having to do string comparisons every time we unwind Tasks, we keep track
+    // of the cache key of the "_run" Frame.
+    static std::optional<Frame::Key> frame_cache_key;
+    bool expect_at_least_one_running_task = false;
+    if (!frame_cache_key) {
+        for (size_t i = 0; i < python_stack.size(); i++) {
+            const auto& frame = python_stack[i].get();
+            const auto& name = string_table.lookup(frame.name)->get();
+            if (name.size() >= 4 && name.rfind("_run") == name.size() - 4) {
+
+                // Although Frames are stored in an LRUCache, the cache key is ALWAYS the same
+                // even if the Frame gets evicted from the cache.
+                // This means we can keep the cache key and re-use it to determine
+                // whether we see the "_run" Frame in the Python stack.
+                frame_cache_key = frame.cache_key;
+                expect_at_least_one_running_task = true;
+                break;
+            }
+        }
+    } else {
+        for (size_t i = 0; i < python_stack.size(); i++) {
+            const auto& frame = python_stack[i].get();
+            if (frame.cache_key == *frame_cache_key) {
+                expect_at_least_one_running_task = true;
+                break;
+            }
+        }
+    }
+
     std::vector<TaskInfo::Ref> leaf_tasks;
     std::unordered_set<PyObject*> parent_tasks;
     std::unordered_map<PyObject*, TaskInfo::Ref> waitee_map;  // Indexed by task origin
@@ -247,6 +277,22 @@ inline Result<void> ThreadInfo::unwind_tasks()
     }
 
     auto all_tasks = std::move(*maybe_all_tasks);
+
+    bool saw_at_least_one_running_task = false;
+    std::string running_task_name;
+    for (const auto& task_ref : all_tasks) {
+        const auto& task = task_ref.get();
+        if (task->is_on_cpu) {
+            running_task_name = string_table.lookup(task->name)->get();
+            saw_at_least_one_running_task = true;
+            break;
+        }
+    }
+
+    if (saw_at_least_one_running_task != expect_at_least_one_running_task) {
+        return ErrorKind::TaskInfoError;
+    }
+
     {
         std::lock_guard<std::mutex> lock(task_link_map_lock);
 
@@ -317,7 +363,12 @@ inline Result<void> ThreadInfo::unwind_tasks()
             auto& task = current_task.get();
 
             // The task_stack_size includes both the coroutines frames and the "upper" Python synchronous frames
-            size_t task_stack_size = task.unwind(stack, task.is_on_cpu ? upper_python_stack_size : unused);
+            auto maybe_task_stack_size = task.unwind(stack, task.is_on_cpu ? upper_python_stack_size : unused);
+            if (!maybe_task_stack_size) {
+                return ErrorKind::TaskInfoError;
+            }
+
+            size_t task_stack_size = std::move(*maybe_task_stack_size);
             if (task.is_on_cpu)
             {
                 // Get the "bottom" part of the Python synchronous Stack, that is to say the
